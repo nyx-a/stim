@@ -1,12 +1,18 @@
 
 require_relative 'b.trap.rb'
 
-class Duration
+module B
+  # for namespace
+end
+
+class B::Duration
+  include Comparable
+
   UNIT = {
-    'seconds'   => 1,
-    'minutes'   => 60,
-    'hours'     => 60 * 60,
-    'days'      => 60 * 60 * 24,
+    'seconds'   => Float(           1),
+    'minutes'   => Float(          60),
+    'hours'     => Float(     60 * 60),
+    'days'      => Float(24 * 60 * 60),
   }
   ULBL,UVAL = UNIT.sort_by(&:last).reverse.transpose
 
@@ -16,6 +22,10 @@ class Duration
     UNIT[r]
   end
 
+  def self.parse str
+    B::Duration.new string_to_second str
+  end
+
   def self.string_to_second str
     bamboo = str.scan(/(\d+(?:\.\d+)?)\s*(\p{alpha}+)/)
     if bamboo.empty?
@@ -23,7 +33,7 @@ class Duration
     end
     sum = 0
     for a,u in bamboo
-      sum += a.to_f * Duration.unit(u)
+      sum += a.to_f * B::Duration.unit(u)
     end
     return sum
   end
@@ -50,33 +60,34 @@ class Duration
     end
   end
 
-  def self.[] o, unit:nil, f:0
-    Duration.new o, unit:unit, f:f
+  def self.[] *args
+    B::Duration.new(*args)
   end
 
   # ---
 
-  def initialize o=nil, unit:nil, f:0
-    self.store(o, unit:unit, f:f)
+  def initialize obj=nil, unit:nil, f:0
+    self.store(obj, unit:unit, f:f)
   end
 
-  def store o, unit:nil, f:0
+  def store obj, unit:nil, f:0
     self.fratio = f # fluctuation ratio
     @sec = if unit.nil?
-             case o
-             when NilClass then nil
-             when String   then Duration.string_to_second o
-             when Duration then o.second
+             case obj
+             when NilClass    then nil
+             when String      then B::Duration.string_to_second obj
+             when Numeric     then obj.to_f
+             when B::Duration then obj.second
              else
-               raise "invalid class => '#{o.class}'"
+               raise "invalid class => '#{obj.class}'"
              end
            else
-             o * Duration.unit(unit)
+             obj * B::Duration.unit(unit)
            end
   end
 
   def to_s
-    @sec.nil? ? '<empty>' : Duration.second_to_string(@sec)
+    @sec.nil? ? '<empty>' : B::Duration.second_to_string(@sec)
   end
 
   def inspect
@@ -95,49 +106,30 @@ class Duration
   alias :reset :clear
 
   def hour
-    @sec.nil? ? nil : @sec / 60.0 / 60.0
+    @sec.nil? ? nil : @sec / UNIT['hours']
   end
   def minute
-    @sec.nil? ? nil : @sec / 60.0
+    @sec.nil? ? nil : @sec / UNIT['minutes']
   end
   def second
     @sec
   end
 
   def + other
-    other = Duration.new(other)
-    Duration.new(@sec + other.second, unit:'seconds')
+    B::Duration[@sec + B::Duration[other].second]
   end
   def - other
-    other = Duration.new(other)
-    Duration.new(@sec - other.second, unit:'seconds')
+    B::Duration[@sec - B::Duration[other].second]
   end
   def * other
-    Duration.new(@sec * other, unit:'seconds')
+    B::Duration[@sec * B::Duration[other].second]
   end
   def / other
-    Duration.new(@sec / other, unit:'seconds')
+    B::Duration[@sec / B::Duration[other].second]
   end
-  def < other
-    @sec < other.second
-  end
-  def > other
-    @sec > other.second
-  end
-  def <= other
-    @sec <= other.second
-  end
-  def >= other
-    @sec >= other.second
-  end
-  def == other
-    @sec == other.second
-  end
+
   def <=> other
-    @sec <=> other.second
-  end
-  def === other
-    @sec === other.second
+    @sec <=> B::Duration[other].second
   end
 
   # ---
@@ -155,16 +147,16 @@ class Duration
   # ---
 
   def shake
-    Duration.new(self.to_f, unit:'seconds')
+    B::Duration.new self.to_f
   end
 
   def sleep
-    return true if Trap.interrupted
+    return true if B::Trap.interrupted?
     ssec = self.to_f
     if ssec < 0
       raise "sleep interval must be positive => '#{ssec}'"
     end
-    Trap.start { Kernel.sleep ssec }
+    B::Trap.sleep ssec
   end
 
   def loop &block

@@ -1,6 +1,9 @@
 
-class NumFile
+module B
+  # for namespace
+end
 
+class B::NumFile
   attr_accessor :path
   attr_accessor :filename
   attr_accessor :number

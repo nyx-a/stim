@@ -1,7 +1,11 @@
 
 require 'logger'
 
-class Log
+module B
+  # for namespace
+end
+
+class B::Log
   def initialize d, age:3, size:1_000_000, f:'%F %T.%1N', s:' | '
     @logger     = Logger.new(d, age, size)
     @format     = f
@@ -29,7 +33,7 @@ class Log
     @logger << "- #{@padding}#{@separator}\n"
   end
 
-  def hardblank
+  def gap
     @logger << "\n"
   end
 

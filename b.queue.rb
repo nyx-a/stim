@@ -1,5 +1,10 @@
 
-class QP
+module B
+  # for namespace
+end
+
+# Priority Queue
+class B::QP
   def initialize n=1
     @number     = n
     @thread     = [ ]

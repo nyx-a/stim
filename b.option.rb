@@ -1,36 +1,39 @@
 
 require 'optparse'
 
-class Option
+module B
+  # for namespace
+end
+
+class B::Option
   def initialize hash
-    @sw = { }
-    @op = OptionParser.new
-    @ex = [ ]
+    @legal  = hash.to_h{ |k,v| [k.to_sym, v] }.freeze
+    @op     = OptionParser.new
+    @switch = { }
+    @bare   = [ ]
 
     @op.summary_indent = ''
 
-    for name,type in hash
+    for name,type in @legal
       unless type.is_a? Class or type.is_a? Array
-        raise "must be a class => '#{type}'"
+        raise "must be a class => #{type}"
       end
-
-      name = name.to_s
 
       singleton = <<-"EoE"
         Proc.new do |x|
-          if @sw.key? '#{name}'
+          if @switch.key? :'#{name}'
             puts "multiple definition of '--#{name}'"
             exit
           end
-          @sw['#{name}'] = x
+          @switch[:'#{name}'] = x
         end
       EoE
       multiton = <<-"EoE"
         Proc.new do |x|
-          unless @sw.key? '#{name}'
-            @sw['#{name}'] = [ ]
+          unless @switch.key? :'#{name}'
+            @switch[:'#{name}'] = [ ]
           end
-          @sw['#{name}'].push x
+          @switch[:'#{name}'].push x
         end
       EoE
 
@@ -40,13 +43,13 @@ class Option
         end
         type = type.first
         if type==TrueClass
-          @op.on("--#{name}",         type, eval(multiton))
+          @op.on("--[no-]#{name}",    type, eval(multiton))
         else
           @op.on("--#{name} #{type}", type, eval(multiton))
         end
       else
         if type==TrueClass
-          @op.on("--#{name}",         type, eval(singleton))
+          @op.on("--[no-]#{name}",    type, eval(singleton))
         else
           @op.on("--#{name} #{type}", type, eval(singleton))
         end
@@ -56,69 +59,86 @@ class Option
 
     @op.parse! ARGV
     unless ARGV.empty?
-      @ex = ARGV.clone
+      @bare = ARGV.clone
       ARGV.clear
     end
   end
 
   def underlay hash
     for name,value in hash
-      name = name.to_s
-      # unless @sw.has_key? name
-      #   raise "unknown option => '#{name}'"
-      # end
-      unless @sw.has_key? name
-        @sw[name] = value
+      name = name.to_sym
+      raise_if_unknown_option name
+      unless @switch.key? name
+        @switch[name] = value
       end
     end
   end
 
-  def blame_lack *key
-    blame = key.select{ |k| self.blank? k }
-    unless blame.empty?
-      ilist = blame.map{ |x| "    --#{x}\n" }.join
+  def blame_lack *keys
+    lack = keys.flatten.map(&:to_sym) - @switch.keys
+    unless lack.empty?
+      ilist = lack.map{ |x| "    --#{x}\n" }.join
       puts 'These options can not be omitted:'
       puts ilist
       puts
-      help!
+      help_and_exit
     end
   end
 
   def blame_excess
-    unless @ex.empty?
+    unless @bare.empty?
       puts 'Excess parameter(s):'
-      puts @ex.map{ |i| i.gsub(/^/, '    ') }
+      puts @bare.map{ |i| i.gsub(/^/, '    ') }
       puts
-      self.help!
+      help_and_exit
     end
   end
 
   def excess
-    @ex
+    @bare
   end
 
-  def [] key
-    @sw.fetch(key.to_s) { raise "unknown key => '#{key}'" }
+  def [] k
+    k = k.to_sym
+    raise_if_unknown_option k
+    @switch[k]
   end
 
-  def []= key, value
-    @sw[key.to_s] = value
+  def []= k, v
+    k = k.to_sym
+    raise_if_unknown_option k
+    @switch[k] = v
   end
 
-  def blank? key
-    !@sw.key? key
+  def key? k
+    @switch.key? k.to_sym
+  end
+  alias :has_key? :key?
+
+  def to_h
+    @switch.clone
+  end
+  alias :to_hash :to_h
+
+  def slice *keys
+    @switch.slice(*keys.flatten.map(&:to_sym))
   end
 
-  def help!
+  def raise_if_unknown_option k
+    unless @legal.key? k#.to_sym
+      raise "unknown option => #{k}"
+    end
+  end
+
+  def help_and_exit
     puts @op.help
-    exit
+    exit 1
   end
 
   def inspect
-    m = @sw.keys.map(&:length).max
-    @sw.map do |k,v|
-      "--%-*s = %s" % [m, k, v.inspect]
+    m = @legal.keys.map(&:length).max
+    @legal.keys.map do |k|
+      "--%-*s = %s" % [m, k, (@switch[k]).inspect]
     end.join("\n")
   end
 end
-
