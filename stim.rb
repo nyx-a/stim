@@ -254,6 +254,7 @@ begin
   end
 
   opt['pool-directory'] = check_dir opt['pool-directory']
+
 rescue OptionParser::ParseError => err
   STDERR.puts err.message
   STDERR.puts
