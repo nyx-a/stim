@@ -6,7 +6,7 @@ require_relative 'b.trap.rb'
 require_relative 'b.option.rb'
 require_relative 'b.log.rb'
 require_relative 'b.numfile.rb'
-require_relative 'b.duration.rb'
+require_relative 'b.timeamount.rb'
 
 #-
 class Node
@@ -54,7 +54,7 @@ class Node
     info = [
       "pid:#{$?.pid}",
       "(#{es})",
-      ", #{B::Duration.second_to_string(tend - tstt)}",
+      ", #{B::TimeAmount.second_to_string(tend - tstt)}",
     ].join(' ')
     lm.call "END   [#{@name}] #{info}"
 
@@ -130,7 +130,7 @@ class Stimming
               "Must be 3 items => #{part.inspect}"
           end
 
-          trigger = B::Duration.new(part[0], f:0.1)
+          trigger = B::TimeAmount.new(part[0], f:0.1)
           trigger = part[0] if trigger.empty?
 
           node = Node.new
@@ -155,7 +155,7 @@ class Stimming
           end
 
           case trigger
-          when B::Duration
+          when B::TimeAmount
             @list_time[node.name] = node
           when String
             @list_event[node.name] = node

@@ -5,7 +5,7 @@ module B
   # for namespace
 end
 
-class B::Duration
+class B::TimeAmount
   include Comparable
 
   UNIT = {
@@ -23,7 +23,7 @@ class B::Duration
   end
 
   def self.parse str
-    B::Duration.new string_to_second str
+    B::TimeAmount.new string_to_second str
   end
 
   def self.string_to_second str
@@ -33,7 +33,7 @@ class B::Duration
     end
     sum = 0
     for a,u in bamboo
-      sum += a.to_f * B::Duration.unit(u)
+      sum += a.to_f * B::TimeAmount.unit(u)
     end
     return sum
   end
@@ -61,7 +61,7 @@ class B::Duration
   end
 
   def self.[] *args
-    B::Duration.new(*args)
+    B::TimeAmount.new(*args)
   end
 
   # ---
@@ -75,19 +75,19 @@ class B::Duration
     @sec = if unit.nil?
              case obj
              when NilClass    then nil
-             when String      then B::Duration.string_to_second obj
+             when String      then B::TimeAmount.string_to_second obj
              when Numeric     then obj.to_f
-             when B::Duration then obj.second
+             when B::TimeAmount then obj.second
              else
                raise "invalid class => '#{obj.class}'"
              end
            else
-             obj * B::Duration.unit(unit)
+             obj * B::TimeAmount.unit(unit)
            end
   end
 
   def to_s
-    @sec.nil? ? '<empty>' : B::Duration.second_to_string(@sec)
+    @sec.nil? ? '<empty>' : B::TimeAmount.second_to_string(@sec)
   end
 
   def inspect
@@ -116,20 +116,20 @@ class B::Duration
   end
 
   def + other
-    B::Duration[@sec + B::Duration[other].second]
+    B::TimeAmount[@sec + B::TimeAmount[other].second]
   end
   def - other
-    B::Duration[@sec - B::Duration[other].second]
+    B::TimeAmount[@sec - B::TimeAmount[other].second]
   end
   def * other
-    B::Duration[@sec * B::Duration[other].second]
+    B::TimeAmount[@sec * B::TimeAmount[other].second]
   end
   def / other
-    B::Duration[@sec / B::Duration[other].second]
+    B::TimeAmount[@sec / B::TimeAmount[other].second]
   end
 
   def <=> other
-    @sec <=> B::Duration[other].second
+    @sec <=> B::TimeAmount[other].second
   end
 
   # ---
@@ -147,7 +147,7 @@ class B::Duration
   # ---
 
   def shake
-    B::Duration.new self.to_f
+    B::TimeAmount.new self.to_f
   end
 
   def sleep
