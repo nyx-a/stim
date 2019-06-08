@@ -138,7 +138,7 @@ class B::Option
   def inspect
     m = @legal.keys.map(&:length).max
     @legal.keys.map do |k|
-      "--%-*s = %s" % [m, k, (@switch[k]).inspect]
+      "--%-*s = %s" % [m, k, @switch[k].inspect]
     end.join("\n")
   end
 end
