@@ -1,12 +1,15 @@
 #! /usr/bin/env ruby
 
+$:.unshift '..'
+
 require 'fileutils'
-require_relative 'b.rb'
-require_relative 'b.trap.rb'
-require_relative 'b.option.rb'
-require_relative 'b.log.rb'
-require_relative 'b.numfile.rb'
-require_relative 'b.timeamount.rb'
+require 'b/b.rb'
+require 'b/b.trap.rb'
+require 'b/b.option.rb'
+require 'b/b.log.rb'
+require 'b/b.numfile.rb'
+require 'b/b.timeamount.rb'
+require 'b/b.backdoor.rb'
 
 #-
 class Node
@@ -15,7 +18,7 @@ class Node
   attr_accessor :basedir
   attr_accessor :command # and its parameters
   attr_accessor :log
-  attr_accessor :pool
+  attr_accessor :capture
   attr_accessor :limit
   attr_accessor :nextnode
 
@@ -29,7 +32,7 @@ class Node
   end
 
   def execute
-    path = File.join(@pool, @name)
+    path = File.join(@capture, @name)
     fo = B::NumFile.new(path + '.out', limit:@limit)
     fe = B::NumFile.new(path + '.err', limit:@limit)
     fo.move!
@@ -37,7 +40,7 @@ class Node
 
     tstt = Time.now
     pid = spawn(
-      File.join('.', @command),
+      @command,
       pgroup: true,
       chdir:  @basedir,
       out:    fo.to_s,
@@ -73,7 +76,12 @@ class Node
   end
 
   def command_fullpath
-    File.join @basedir, @command.split(' ', 2).first
+    cmd = @command.split(' ', 2).first
+    if cmd =~ %r`^\s*/`
+      cmd
+    else
+      File.join @basedir, cmd
+    end
   end
 
   def inspect
@@ -89,14 +97,16 @@ end
 
 #-
 class Stimming
-  def initialize log, pd, pl
+  include B::Backdoor
+
+  def initialize logger:, captureDir:, captureLimit:
     @tgrp       = ThreadGroup.new
     @list_all   = { }
     @list_time  = { }
     @list_event = { }
-    @log        = log
-    @pool       = pd
-    @limit      = pl
+    @log        = logger
+    @capture    = captureDir
+    @limit      = captureLimit
   end
 
   def readconfig filename
@@ -139,7 +149,7 @@ class Stimming
           node.name       = part[1]
           node.command    = part[2]
           node.log        = @log
-          node.pool       = @pool
+          node.capture    = @capture
           node.limit      = @limit
 
           unless File.exist? node.command_fullpath
@@ -169,12 +179,12 @@ class Stimming
 
   def startall
     for node in @list_event.values
-      backward = @list_all[node.stimulant]
-      if backward.nil?
+      previous = @list_all[node.stimulant]
+      if previous.nil?
         raise SlightError,
           "Unmatched name => '#{node.stimulant}'"
       else
-        backward.nextnode = node
+        previous.nextnode = node
       end
     end
 
@@ -197,6 +207,19 @@ class Stimming
 
   def inspect
     @list_all.values.map(&:inspect).join("\n")
+  end
+
+  def backdoor_repl telegram:, socket:
+    reply = ''
+    token = telegram.split
+    case token.first
+    when 'exit', 'quit'
+      socket.close
+    when 'terminate'
+      B::Trap.hand_interrupt
+      socket.close
+    end
+    return reply
   end
 
   class SlightError < StandardError
@@ -231,29 +254,29 @@ end
 #- options
 begin
   opt = B::Option.new(
-    'daemon'          => TrueClass,
-    'test'            => TrueClass,
-    'pool-directory'  => String,
-    'Pool-age'        => Integer,
-    'log-directory'   => String,
-    'Log-age'         => Integer,
-    'Log-size'        => Integer,
+    'test'              => TrueClass,
+    'daemon'            => TrueClass,
+    'capture.directory' => String,
+    'Capture.age'       => Integer,
+    'log.directory'     => String,
+    'Log.age'           => Integer,
+    'Log.size'          => Integer,
   )
 
   opt.underlay(
-    'daemon'          => true,
-    'pool-directory'  => './pool',
-    'Pool-age'        => 100,
-    'log-directory'   => './log',
-    'Log-age'         => 5,
-    'Log-size'        => 1_000_000,
+    'daemon'            => true,
+    'capture.directory' => './capture',
+    'Capture.age'       => 20,
+    'log.directory'     => './log',
+    'Log.age'           => 5,
+    'Log.size'          => 1_000_000,
   )
 
   if opt['test']
     opt['daemon'] = false
   end
 
-  opt['pool-directory'] = check_dir opt['pool-directory']
+  opt['capture.directory'] = check_dir opt['capture.directory']
 
 rescue OptionParser::ParseError => err
   STDERR.puts err.message
@@ -263,41 +286,46 @@ end
 
 #- log
 unless opt['daemon']
-  opt['log-directory'] = nil
+  opt['log.directory'] = nil
   output = STDOUT
 else
-  opt['log-directory'] = check_dir opt['log-directory']
-  output = File.join opt['log-directory'], "log.#{nametrunk $0}.log"
+  opt['log.directory'] = check_dir opt['log.directory']
+  output = File.join opt['log.directory'], "log.#{nametrunk $0}.log"
 end
 log = B::Log.new(
   output,
   f:    '%m-%d %T',
-  age:  opt['Log-age'],
-  size: opt['Log-size']
+  age:  opt['Log.age'],
+  size: opt['Log.size']
 )
+
+#- daemon
+if opt['daemon']
+  pidfile = "pid.#{nametrunk $0}.pid"
+  if File.exist? pidfile
+    STDERR.puts "file '#{pidfile}' already exists."
+    STDERR.puts
+    exit 1
+  end
+  Process.daemon true
+  File.write pidfile, $$
+end
 
 #-
 begin
-  if opt['daemon']
-    Process.daemon true
-    log.i "Process #{$0} started as daemon. PID=#{$$}"
-    log.blank
-    pidfile = "pid.#{nametrunk $0}.pid"
-    if File.exist? pidfile
-      raise Stimming::SlightError,
-        "#{pidfile} already exists."
-    else
-      File.write pidfile, $$
-    end
-  end
+  log.i "Process Started%s. PID=%d" % [
+    (opt['daemon'] ? ' as a daemon' : ''),
+    $$,
+  ]
+  log.blank
 
   log.i("Options:\n" + opt.inspect)
   log.blank
 
   stim = Stimming.new(
-    log,
-    opt['pool-directory'],
-    opt['Pool-age']
+    logger:       log,
+    captureDir:   opt['capture.directory'],
+    captureLimit: opt['Capture.age']
   )
 
   unless opt.excess.empty?
@@ -309,25 +337,23 @@ begin
     log.blank
   end
 
-  unless stim.empty?
-    log.i stim.inspect
-    log.blank
-  end
-
   if opt['test']
     log.d "Option '--test' is true."
-  else
-    B::Trap.start do
+  elsif !stim.empty?
+    log.i stim.inspect
+    log.blank
+
+    stim.open_backdoor sout:log.method(:i)
+
+    B::Trap.add do
       sleep
-      log.d '( Signal INT received. )'
+      log.d '(Signal INT/TERM received.)'
     end
+
     stim.startall
     stim.joinall
   end
 
-  if opt['daemon']
-    File.delete pidfile
-  end
 rescue Stimming::SlightError => err
   log.e err.message
 rescue Exception => err
@@ -336,6 +362,10 @@ rescue Exception => err
     '(' + err.class.name + ')',
     err.backtrace,
   ].join("\n")
+end
+
+if opt['daemon'] and File.exist? pidfile
+  File.delete pidfile
 end
 
 log.i "Process Terminated. PID=#{$$}"
