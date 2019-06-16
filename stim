@@ -1,0 +1,9 @@
+#! /bin/sh
+
+if test -L $0; then
+	DIR=`dirname $(readlink $0)`
+else
+	DIR=`dirname $0`
+fi
+
+/usr/bin/env ruby -I $DIR -I $DIR/.. $DIR/stim-exec.rb $@
