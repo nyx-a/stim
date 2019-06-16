@@ -20,10 +20,6 @@ def check_dir path
   return path
 end
 
-def nametrunk path
-  File.basename(path, '.*')
-end
-
 
 #- options
 begin
@@ -64,7 +60,7 @@ unless opt['daemon']
   output = STDOUT
 else
   opt['log.directory'] = check_dir opt['log.directory']
-  output = File.join opt['log.directory'], "log.#{nametrunk $0}.log"
+  output = File.join opt['log.directory'], 'log.stim.log'
 end
 log = B::Log.new(
   output,
@@ -75,7 +71,7 @@ log = B::Log.new(
 
 #- daemon
 if opt['daemon']
-  pidfile = "pid.#{nametrunk $0}.pid"
+  pidfile = 'pid.stim.pid'
   if File.exist? pidfile
     STDERR.puts "file '#{pidfile}' already exists."
     STDERR.puts
