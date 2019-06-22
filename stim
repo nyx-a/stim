@@ -6,4 +6,4 @@ else
 	DIR=`dirname $0`
 fi
 
-/usr/bin/env ruby -I $DIR -I $DIR/.. $DIR/stim-exec.rb $@
+/usr/bin/env ruby -I $DIR/.. $DIR/stim-exec.rb $@

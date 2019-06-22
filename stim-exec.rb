@@ -1,101 +1,76 @@
 
 require_relative 'stim-class.rb'
-
-
-def check_dir path
-  path = File.expand_path path
-  if File.exist? path
-    if File.directory? path
-      if File.writable? path
-        # ok
-      else
-        raise "not writable => '#{path}'"
-      end
-    else
-      raise "not directory => '#{path}'"
-    end
-  else
-    FileUtils.mkpath path
-  end
-  return path
-end
-
+require_relative 'stim-func.rb'
 
 #- options
 begin
   opt = B::Option.new(
-    'test'              => TrueClass,
-    'daemon'            => TrueClass,
-    'capture.directory' => String,
-    'Capture.age'       => Integer,
-    'log.directory'     => String,
-    'Log.age'           => Integer,
-    'Log.size'          => Integer,
+    'pretend'             => TrueClass,
+    'directory'           => String,
+    'x-file-pid'          => String,
+    'x-file-log'          => String,
+    'x-file-port'         => String,
+    'x-capture-directory' => String,
+    'x-capture-age'       => Integer,
+    'x-log-age'           => Integer,
+    'x-log-size'          => Integer,
   )
 
   opt.underlay(
-    'daemon'            => true,
-    'capture.directory' => './capture',
-    'Capture.age'       => 20,
-    'log.directory'     => './log',
-    'Log.age'           => 5,
-    'Log.size'          => 1_000_000,
+    'directory'           => '~/.stim',
+    'x-file-pid'          => 'pid.stim.pid',
+    'x-file-log'          => 'log.stim.log',
+    'x-file-port'         => 'port.stim.port',
+    'x-capture-directory' => 'capture',
+    'x-capture-age'       => 20,
+    'x-log-age'           => 5,
+    'x-log-size'          => 1_000_000,
   )
 
-  if opt['test']
-    opt['daemon'] = false
-  end
+  opt['directory'] = prepare_dir opt['directory']
+  cap_dir = prepare_dir(
+    opt['directory'],
+    opt['x-capture-directory']
+  )
+  path_pid  = File.join opt['directory'], opt['x-file-pid']
+  path_log  = File.join opt['directory'], opt['x-file-log']
+  path_port = File.join opt['directory'], opt['x-file-port']
 
-  opt['capture.directory'] = check_dir opt['capture.directory']
-
-rescue OptionParser::ParseError => err
+rescue => err
   STDERR.puts err.message
   STDERR.puts
   exit 1
 end
 
-#- log
-unless opt['daemon']
-  opt['log.directory'] = nil
-  output = STDOUT
-else
-  opt['log.directory'] = check_dir opt['log.directory']
-  output = File.join opt['log.directory'], 'log.stim.log'
+#- pid
+if File.exist? path_pid
+  STDERR.puts "file '#{path_pid}' already exists."
+  STDERR.puts
+  exit 1
 end
-log = B::Log.new(
-  output,
-  f:    '%m-%d %T',
-  age:  opt['Log.age'],
-  size: opt['Log.size']
-)
+Process.daemon true
+File.write path_pid, $$
 
-#- daemon
-if opt['daemon']
-  pidfile = 'pid.stim.pid'
-  if File.exist? pidfile
-    STDERR.puts "file '#{pidfile}' already exists."
-    STDERR.puts
-    exit 1
-  end
-  Process.daemon true
-  File.write pidfile, $$
-end
+#- log
+log = B::Log.new(
+  (opt['pretend'] ? STDOUT : path_log),
+  format: '%m-%d %T',
+  age:    opt['x-log-age'],
+  size:   opt['x-log-size']
+)
 
 #-
 begin
-  log.i "Process Started%s. PID=%d" % [
-    (opt['daemon'] ? ' as a daemon' : ''),
-    $$,
-  ]
+  log.i "Process Started. PID=#{$$}"
   log.blank
 
-  log.i("Options:\n" + opt.inspect)
+  log.i "Options:\n#{opt.inspect}"
   log.blank
 
   stim = Stimming.new(
     logger:       log,
-    captureDir:   opt['capture.directory'],
-    captureLimit: opt['Capture.age']
+    captureDir:   cap_dir,
+    captureLimit: opt['x-capture-age']
   )
 
   unless opt.excess.empty?
@@ -107,13 +82,15 @@ begin
     log.blank
   end
 
-  if opt['test']
-    log.d "Option '--test' is true."
+  if opt['pretend']
+    log.d "Option '--pretend' is true."
   elsif !stim.empty?
     log.i stim.inspect
     log.blank
 
     stim.open_backdoor sout:log.method(:i)
+    log.blank
+    File.write path_port, stim.backdoor_port
 
     B::Trap.add do
       sleep
@@ -122,8 +99,8 @@ begin
 
     stim.startall
     stim.joinall
+    B::Trap.join
   end
-
 rescue Stimming::SlightError => err
   log.e err.message
 rescue Exception => err
@@ -134,9 +111,8 @@ rescue Exception => err
   ].join("\n")
 end
 
-if opt['daemon'] and File.exist? pidfile
-  File.delete pidfile
-end
+File.delete path_pid if File.exist? path_pid
+File.delete path_port if File.exist? path_port
 
 log.i "Process Terminated. PID=#{$$}"
 log.gap

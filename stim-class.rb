@@ -9,89 +9,6 @@ require 'b/timeamount.rb'
 require 'b/backdoor.rb'
 
 
-class Node
-  attr_accessor :name
-  attr_accessor :stimulant
-  attr_accessor :basedir
-  attr_accessor :command # and its parameters
-  attr_accessor :log
-  attr_accessor :capture
-  attr_accessor :limit
-  attr_accessor :nextnode
-
-  def start
-    Thread.new do
-      until B::Trap.interrupted?
-        self.execute
-        @stimulant.sleep
-      end
-    end
-  end
-
-  def execute
-    path = File.join(@capture, @name)
-    fo = B::NumFile.new(path + '.out', limit:@limit)
-    fe = B::NumFile.new(path + '.err', limit:@limit)
-    fo.move!
-    fe.move!
-
-    tstt = Time.now
-    pid = spawn(
-      @command,
-      pgroup: true,
-      chdir:  @basedir,
-      out:    fo.to_s,
-      err:    fe.to_s
-    )
-    @log.i "START [#{@name}] pid:#{pid}"
-    Process.waitpid pid
-    tend = Time.now
-    fo.delete! if fo.zero?
-    fe.delete! if fe.zero?
-
-    es = $?.exitstatus
-    lm = es==0 ? @log.method(:i) : @log.method(:e)
-    info = [
-      "pid:#{$?.pid}",
-      "(#{es})",
-      ", #{B::TimeAmount.second_to_string(tend - tstt)}",
-    ].join(' ')
-    lm.call "END   [#{@name}] #{info}"
-
-    unless @nextnode.nil?
-      Thread.new do
-        @log.i "      (#{@name}) --> (#{@nextnode.name})"
-        @nextnode.execute
-      end
-    end
-  rescue Exception => err
-    @log.f [
-      err.message,
-      '(' + err.class.name + ')',
-      err.backtrace,
-    ].join("\n")
-  end
-
-  def command_fullpath
-    cmd = @command.split(' ', 2).first
-    if cmd =~ %r`^\s*/`
-      cmd
-    else
-      File.join @basedir, cmd
-    end
-  end
-
-  def inspect
-    [
-      "<#{@name}>",
-      '  Stimulant : ' + @stimulant.inspect,
-      '  Directory : ' + @basedir,
-      '  Command   : ' + @command,
-    ].join("\n")
-  end
-end
-
-
 class Stimming
   include B::Backdoor
 
@@ -222,3 +139,85 @@ class Stimming
   end
 end
 
+
+class Node
+  attr_accessor :name
+  attr_accessor :stimulant
+  attr_accessor :basedir
+  attr_accessor :command # and its parameters
+  attr_accessor :log
+  attr_accessor :capture
+  attr_accessor :limit
+  attr_accessor :nextnode
+
+  def start
+    Thread.new do
+      until B::Trap.interrupted?
+        self.execute
+        @stimulant.sleep
+      end
+    end
+  end
+
+  def execute
+    path = File.join(@capture, @name)
+    fo = B::NumFile.new(path + '.out', limit:@limit)
+    fe = B::NumFile.new(path + '.err', limit:@limit)
+    fo.move!
+    fe.move!
+
+    tstt = Time.now
+    pid = spawn(
+      @command,
+      pgroup: true,
+      chdir:  @basedir,
+      out:    fo.to_s,
+      err:    fe.to_s
+    )
+    @log.i "START [#{@name}] pid:#{pid}"
+    Process.waitpid pid
+    tend = Time.now
+    fo.delete! if fo.zero?
+    fe.delete! if fe.zero?
+
+    es = $?.exitstatus
+    lm = es==0 ? @log.method(:i) : @log.method(:e)
+    info = [
+      "pid:#{$?.pid}",
+      "(#{es})",
+      ", #{B::TimeAmount.second_to_string(tend - tstt)}",
+    ].join(' ')
+    lm.call "END   [#{@name}] #{info}"
+
+    unless @nextnode.nil?
+      Thread.new do
+        @log.i "      (#{@name}) --> (#{@nextnode.name})"
+        @nextnode.execute
+      end
+    end
+  rescue Exception => err
+    @log.f [
+      err.message,
+      '(' + err.class.name + ')',
+      err.backtrace,
+    ].join("\n")
+  end
+
+  def command_fullpath
+    cmd = @command.split(' ', 2).first
+    if cmd =~ %r`^\s*/`
+      cmd
+    else
+      File.join @basedir, cmd
+    end
+  end
+
+  def inspect
+    [
+      "<#{@name}>",
+      '  Stimulant : ' + @stimulant.inspect,
+      '  Directory : ' + @basedir,
+      '  Command   : ' + @command,
+    ].join("\n")
+  end
+end
