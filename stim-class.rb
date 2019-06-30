@@ -6,12 +6,8 @@ require 'b/option.rb'
 require 'b/log.rb'
 require 'b/numfile.rb'
 require 'b/timeamount.rb'
-require 'b/backdoor.rb'
-
 
 class Stimming
-  include B::Backdoor
-
   def initialize logger:, captureDir:, captureLimit:
     @tgrp       = ThreadGroup.new
     @list_all   = { }
@@ -114,25 +110,16 @@ class Stimming
     end
   end
 
+  def running_nodes
+    @list_all.to_h{ |k,v| [k, v.pid] }.compact
+  end
+
   def empty?
     @list_all.empty?
   end
 
   def inspect
     @list_all.values.map(&:inspect).join("\n")
-  end
-
-  def backdoor_repl telegram:, socket:
-    reply = ''
-    token = telegram.split
-    case token.first
-    when 'exit', 'quit'
-      socket.close
-    when 'terminate'
-      B::Trap.hand_interrupt
-      socket.close
-    end
-    return reply
   end
 
   class SlightError < StandardError
@@ -150,6 +137,9 @@ class Node
   attr_accessor :limit
   attr_accessor :nextnode
 
+  attr_reader   :pid
+  attr_reader   :start_time
+
   def start
     Thread.new do
       until B::Trap.interrupted?
@@ -166,16 +156,16 @@ class Node
     fo.move!
     fe.move!
 
-    tstt = Time.now
-    pid = spawn(
+    @start_time = Time.now
+    @pid = spawn(
       @command,
       pgroup: true,
       chdir:  @basedir,
       out:    fo.to_s,
       err:    fe.to_s
     )
-    @log.i "START [#{@name}] pid:#{pid}"
-    Process.waitpid pid
+    @log.i "START [#{@name}] pid:#{@pid}"
+    Process.waitpid @pid
     tend = Time.now
     fo.delete! if fo.zero?
     fe.delete! if fe.zero?
@@ -183,11 +173,13 @@ class Node
     es = $?.exitstatus
     lm = es==0 ? @log.method(:i) : @log.method(:e)
     info = [
-      "pid:#{$?.pid}",
+      "pid:#{@pid}",
       "(#{es})",
-      ", #{B::TimeAmount.second_to_string(tend - tstt)}",
+      ", #{B::TimeAmount.second_to_string(tend - @start_time)}",
     ].join(' ')
     lm.call "END   [#{@name}] #{info}"
+    @pid = nil
+    @start_time = nil
 
     unless @nextnode.nil?
       Thread.new do

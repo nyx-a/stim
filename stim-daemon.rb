@@ -1,12 +1,13 @@
 
 require_relative 'stim-class.rb'
 require_relative 'stim-func.rb'
+require_relative 'stim-interaction.rb'
 
-#- options
 begin
   opt = B::Option.new(
     'pretend'             => TrueClass,
     'directory'           => String,
+    'x-file-run-command'  => String,
     'x-file-pid'          => String,
     'x-file-log'          => String,
     'x-file-port'         => String,
@@ -18,6 +19,7 @@ begin
 
   opt.underlay(
     'directory'           => '~/.stim',
+    'x-file-run-command'  => 'stimrc',
     'x-file-pid'          => 'pid.stim.pid',
     'x-file-log'          => 'log.stim.log',
     'x-file-port'         => 'port.stim.port',
@@ -32,6 +34,7 @@ begin
     opt['directory'],
     opt['x-capture-directory']
   )
+  path_rc   = File.join opt['directory'], opt['x-file-run-command']
   path_pid  = File.join opt['directory'], opt['x-file-pid']
   path_log  = File.join opt['directory'], opt['x-file-log']
   path_port = File.join opt['directory'], opt['x-file-port']
@@ -42,16 +45,16 @@ rescue => err
   exit 1
 end
 
-#- pid
-if File.exist? path_pid
-  STDERR.puts "file '#{path_pid}' already exists."
-  STDERR.puts
-  exit 1
+unless opt['pretend']
+  if File.exist? path_pid
+    STDERR.puts "file '#{path_pid}' already exists."
+    STDERR.puts
+    exit 1
+  end
+  Process.daemon true
+  File.write path_pid, $$
 end
-Process.daemon true
-File.write path_pid, $$
 
-#- log
 log = B::Log.new(
   (opt['pretend'] ? STDOUT : path_log),
   format: '%m-%d %T',
@@ -59,7 +62,6 @@ log = B::Log.new(
   size:   opt['x-log-size']
 )
 
-#-
 begin
   log.i "Process Started. PID=#{$$}"
   log.blank
@@ -73,8 +75,8 @@ begin
     captureLimit: opt['x-capture-age']
   )
 
-  unless opt.excess.empty?
-    for f in opt.excess
+  unless opt.bare.empty?
+    for f in opt.bare
       log.i "Reading configure file: '#{f}'"
       c = stim.readconfig f
       log.i " -> #{c} node#{c>1 ? 's' : ''}."
@@ -88,7 +90,10 @@ begin
     log.i stim.inspect
     log.blank
 
-    stim.open_backdoor sout:log.method(:i)
+    stim.open_backdoor(
+      sout:log.method(:d),
+      prompt:->{ "#{stim.running_nodes.size}> " },
+    )
     log.blank
     File.write path_port, stim.backdoor_port
 
@@ -111,8 +116,10 @@ rescue Exception => err
   ].join("\n")
 end
 
-File.delete path_pid if File.exist? path_pid
-File.delete path_port if File.exist? path_port
+unless opt['pretend']
+  File.delete path_pid if File.exist? path_pid
+  File.delete path_port if File.exist? path_port
+end
 
 log.i "Process Terminated. PID=#{$$}"
 log.gap
