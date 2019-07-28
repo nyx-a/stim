@@ -1,40 +1,39 @@
 
+require_relative 'b/option.rb'
 require_relative 'stim-class.rb'
-require_relative 'stim-func.rb'
-require_relative 'stim-interaction.rb'
+require_relative 'stim-misc.rb'
 
 begin
   opt = B::Option.new(
     'pretend'             => TrueClass,
     'directory'           => String,
-    'x-file-run-command'  => String,
+    'x-file-startup'      => String,
     'x-file-pid'          => String,
     'x-file-log'          => String,
     'x-file-port'         => String,
     'x-capture-directory' => String,
-    'x-capture-age'       => Integer,
     'x-log-age'           => Integer,
     'x-log-size'          => Integer,
   )
 
   opt.underlay(
-    'directory'           => '~/.stim',
-    'x-file-run-command'  => 'stimrc',
+    'pretend'             => false,
+    'directory'           => '~/.stim.d',
+    'x-file-startup'      => 'initrc',
     'x-file-pid'          => 'pid.stim.pid',
     'x-file-log'          => 'log.stim.log',
     'x-file-port'         => 'port.stim.port',
     'x-capture-directory' => 'capture',
-    'x-capture-age'       => 20,
     'x-log-age'           => 5,
     'x-log-size'          => 1_000_000,
   )
 
-  opt['directory'] = prepare_dir opt['directory']
-  cap_dir = prepare_dir(
+  opt['directory'] = Stimming.prepare_dir opt['directory']
+  cap_dir = Stimming.prepare_dir(
     opt['directory'],
     opt['x-capture-directory']
   )
-  path_rc   = File.join opt['directory'], opt['x-file-run-command']
+  path_rc   = File.join opt['directory'], opt['x-file-startup']
   path_pid  = File.join opt['directory'], opt['x-file-pid']
   path_log  = File.join opt['directory'], opt['x-file-log']
   path_port = File.join opt['directory'], opt['x-file-port']
@@ -72,20 +71,19 @@ begin
   stim = Stimming.new(
     logger:       log,
     captureDir:   cap_dir,
-    captureLimit: opt['x-capture-age']
   )
 
   unless opt.bare.empty?
     for f in opt.bare
       log.i "Reading configure file: '#{f}'"
-      c = stim.readconfig f
+      c = stim.read_yaml f
       log.i " -> #{c} node#{c>1 ? 's' : ''}."
     end
     log.blank
   end
 
   if opt['pretend']
-    log.d "Option '--pretend' is true."
+    log.i "Option '--pretend' is true."
   elsif !stim.empty?
     log.i stim.inspect
     log.blank
@@ -99,14 +97,14 @@ begin
 
     B::Trap.add do
       sleep
-      log.d '(Signal INT/TERM received.)'
+      log.i '(Signal INT/TERM received.)'
+      stim.stop
     end
 
-    stim.startall
-    stim.joinall
+    stim.start.join
     B::Trap.join
   end
-rescue Stimming::SlightError => err
+rescue Stimming::Error => err
   log.e err.message
 rescue Exception => err
   log.e [
