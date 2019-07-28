@@ -67,8 +67,13 @@ class Stimming
   BACKDOOR_ALLOW = BACKDOOR_ALLOW.merge(
     terminate:      'terminate daemon',
     inspect:        'inspect all nodes',
+    running_nodes:  'show running nodes PID',
     read_yaml:      'read configure file',
   )
+
+  def running_nodes
+    @list.to_h{ |k,v| [k, v.pid] }.compact
+  end
 
   def terminate
     B::Trap.hand_interrupt

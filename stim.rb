@@ -1,3 +1,4 @@
+#! /usr/bin/env ruby
 
 require_relative 'b/option.rb'
 require_relative 'stim-class.rb'
@@ -29,7 +30,7 @@ begin
   )
 
   opt['directory'] = Stimming.prepare_dir opt['directory']
-  cap_dir = Stimming.prepare_dir(
+  path_capd = Stimming.prepare_dir(
     opt['directory'],
     opt['x-capture-directory']
   )
@@ -37,7 +38,6 @@ begin
   path_pid  = File.join opt['directory'], opt['x-file-pid']
   path_log  = File.join opt['directory'], opt['x-file-log']
   path_port = File.join opt['directory'], opt['x-file-port']
-
 rescue => err
   STDERR.puts err.message
   STDERR.puts
@@ -64,14 +64,10 @@ log = B::Log.new(
 begin
   log.i "Process Started. PID=#{$$}"
   log.blank
-
   log.i "Options:\n#{opt.inspect}"
   log.blank
 
-  stim = Stimming.new(
-    logger:       log,
-    captureDir:   cap_dir,
-  )
+  stim = Stimming.new logger:log, captureDir:path_capd
 
   unless opt.bare.empty?
     for f in opt.bare
