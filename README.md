@@ -1,4 +1,6 @@
 # Stim
+Pure ruby, worse cron script.
+
 ## Install
 ```
 $ git clone git@github.com:nyx-a/stim.git
