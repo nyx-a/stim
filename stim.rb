@@ -1,6 +1,6 @@
 #! /usr/bin/env ruby
 
-require_relative 'b/option.rb'
+require_relative 'option.rb'
 require_relative 'stim-class.rb'
 require_relative 'stim-misc.rb'
 
@@ -16,19 +16,17 @@ begin
     'x-log-age'           => Integer,
     'x-log-size'          => Integer,
   )
-
   opt.underlay(
     'pretend'             => false,
     'directory'           => '~/.stim.d',
     'x-file-startup'      => 'initrc',
-    'x-file-pid'          => 'pid.stim.pid',
     'x-file-log'          => 'log.stim.log',
-    'x-file-port'         => 'port.stim.port',
+    'x-file-pid'          => 'num.stim.pid',
+    'x-file-port'         => 'num.stim.port',
     'x-capture-directory' => 'capture',
     'x-log-age'           => 5,
     'x-log-size'          => 1_000_000,
   )
-
   opt['directory'] = Stimming.prepare_dir opt['directory']
   path_capd = Stimming.prepare_dir(
     opt['directory'],
@@ -73,7 +71,7 @@ begin
     for f in opt.bare
       log.i "Reading configure file: '#{f}'"
       c = stim.read_yaml f
-      log.i " -> #{c} node#{c>1 ? 's' : ''}."
+      log.i " -> #{c} Node#{c>1 ? 's' : ''}."
     end
     log.blank
   end

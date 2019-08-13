@@ -1,17 +1,15 @@
 
 require 'yaml'
-require_relative 'b/trap.rb'
-require_relative 'b/log.rb'
-require_relative 'b/datedfile.rb'
-require_relative 'b/timeamount.rb'
-require_relative 'b/organ.rb'
+require_relative 'trap.rb'
+require_relative 'log.rb'
+require_relative 'datedfile.rb'
+require_relative 'timeamount.rb'
+require_relative 'organ.rb'
 require_relative 'stim-misc.rb'
 
 class Stimming
-  def getnode name
-    if name.is_a? Array
-      name.map{ |y| getnode y }
-    else
+  def getnode aon
+    aon.map do |name|
       @list.fetch(name){ |k| raise NoSuchNode, k }
     end
   end
@@ -47,6 +45,7 @@ class Stimming
         end
 
         waiting = Stimming.scan_tokens field['o']
+        need_replace = !waiting.empty?
         waiting.push opt_t.map(&:name) unless opt_t.nil?
         waiting.uniq!
         parent = getnode waiting.flatten.uniq
@@ -56,15 +55,16 @@ class Stimming
         end
 
         newnode = Node.new(
-          name:      name,
-          directory: dir,
-          command:   field['c'],
-          options:   field['o'],
-          waiting:   waiting,
-          parent:    parent,
-          interval:  interval,
-          log:       @log,
-          capture:   @capture,
+          name:         name,
+          directory:    dir,
+          command:      field['c'],
+          options:      field['o'] || "",
+          waiting:      waiting,
+          parent:       parent,
+          need_replace: need_replace,
+          interval:     interval,
+          log:          @log,
+          capture:      @capture,
         )
         parent.each{ |p| p.child.append newnode }
         @list[name] = newnode
@@ -105,6 +105,7 @@ class Node < B::Organ
   attr_accessor :interval
   attr_accessor :log
   attr_accessor :capture
+  attr_accessor :need_replace
 
   attr_reader   :pid
   attr_reader   :start_time
@@ -125,7 +126,7 @@ class Node < B::Organ
                   table[Stimming::tokenize $1].fullpath
                 end
               end
-    fullstr = if options.nil? or options.empty?
+    fullcmd = if options.nil? or options.empty?
                 @command
               else
                 [@command, options].join(' ')
@@ -142,7 +143,7 @@ class Node < B::Organ
     fe = B::DatedFile.new dir:@capture, name:@name, ext:'err'
     @start_time = Time.now
     @pid = spawn(
-      fullstr,
+      fullcmd,
       pgroup: true,
       chdir:  @directory,
       out:    fo.openfile.fileno,
@@ -151,20 +152,28 @@ class Node < B::Organ
     @log.i [
       "START (#{@name})",
       events,
-      "pid:#{@pid}"
+      "pid=#{@pid}"
     ].compact.join(' ')
 
     Process.waitpid @pid
     @end_time = Time.now
+    time_taken = @end_time - @start_time
     fo.closefile
     fe.closefile
 
-    @log.i [
+    if $?.exitstatus == 0
+      lmethod = @log.method :i
+      estatus = nil
+    else
+      lmethod = @log.method :e
+      estatus = "EXITSTATUS=#{$?.exitstatus}"
+    end
+    lmethod.call [
       "END   (#{@name})",
       events,
-      "pid:#{@pid}",
-      ($?.exitstatus==0 ? nil : "ExitStatus:#{$?.exitstatus}"),
-      (B::TimeAmount.second_to_string(@end_time - @start_time)),
+      "pid=#{@pid}",
+      estatus,
+      B::TimeAmount.second_to_string(time_taken),
     ].compact.join(' ')
     @pid = nil
     @start_time = nil
@@ -172,6 +181,7 @@ class Node < B::Organ
     for d in @child
       d.push fo
     end
+    return time_taken
   rescue Exception => err
     @log.f [
       err.message,
@@ -254,15 +264,23 @@ class Node < B::Organ
   end
 
   def inspect
-    [
+    base = [
       "(#{@name})",
-      "  directory: #{@directory.inspect}",
-      "  command:   #{@command.inspect}",
-      "  options:   #{@options.inspect}",
-      "  interval:  #{@interval.inspect}",
-      "  waiting:   #{@waiting.map{|x|x.join('|')}.inspect}",
-      "  parent:    #{@parent.map(&:name)}",
-      "  child:     #{@child.map(&:name)}",
-    ].join "\n"
+      "  Directory: #{@directory.inspect}",
+      "  Command:   #{@command.inspect}",
+      "  Options:   #{@options.inspect}",
+    ]
+    if !@interval.nil? and !@interval.empty?
+      base.concat [
+        "  Interval:  #{@interval.inspect}",
+      ]
+    else
+      base.concat [
+        "  Waiting:   #{@waiting.map{|x|x.join('|')}.inspect}",
+        "  Parent:    #{@parent.map(&:name)}",
+        "  Child:     #{@child.map(&:name)}",
+      ]
+    end
+    base.join "\n"
   end
 end

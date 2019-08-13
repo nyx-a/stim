@@ -1,6 +1,6 @@
 
 require 'fileutils'
-require_relative 'b/backdoor.rb'
+require_relative 'backdoor.rb'
 
 class Stimming
   def self.prepare_dir *path
@@ -69,6 +69,7 @@ class Stimming
     inspect:        'inspect all nodes',
     running_nodes:  'show running nodes PID',
     read_yaml:      'read configure file',
+    execute:        'execute node(s)',
   )
 
   def running_nodes
@@ -87,6 +88,13 @@ class Stimming
         r = read_eval_return l
         log&.call r
       end
+    end
+  end
+
+  def execute *names
+    getnode(names).map do |o|
+      raise "can't execute dependent node." if o.need_replace
+      o.execute
     end
   end
 
