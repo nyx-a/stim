@@ -1,29 +1,67 @@
 
 require 'yaml'
-require_relative 'trap.rb'
 require_relative 'log.rb'
-require_relative 'datedfile.rb'
 require_relative 'timeamount.rb'
-require_relative 'organ.rb'
+require_relative 'trap.rb'
+require_relative 'backdoor.rb'
 require_relative 'stim-misc.rb'
+require_relative 'stim-node.rb'
 
 class Stimming
-  def getnode aon
-    aon.map do |name|
-      @list.fetch(name){ |k| raise NoSuchNode, k }
+  include B::Backdoor
+
+  BACKDOOR_ALLOW = BACKDOOR_ALLOW.merge(
+    terminate:      'terminate daemon',
+    inspect:        'inspect all nodes',
+    running_nodes:  'show running nodes PID',
+    read_yaml:      'read configure file',
+    read_yamls:     'read configure file(*)',
+    execute:        'execute node(s)',
+  )
+
+  def initialize log:, cap:
+    @list    = { } # "name" => Node
+    @log     = log
+    @capture = cap
+  end
+
+  def getnode names
+    names.map do |n|
+      @list.fetch(n){ |k| raise NoSuchNode, k }
     end
   end
 
-  def initialize logger:, captureDir:
-    @list    = { }
-    @log     = logger
-    @capture = captureDir
+  def running_nodes
+    @list.to_h{ |k,v| [k, v.pid] }.compact
   end
 
-  def read_yaml path, base_dir:'.'
-    yml = YAML.load_file path
+  def terminate
+    B::Trap.hand_interrupt
+    nil
+  end
+
+  def execute *names
+    getnode(names).map do |o|
+      raise "can't execute dependent node." if o.need_replace
+      o.execute
+    end
+  end
+
+  def read_yamls script
+    bdir = File.dirname script
+    sum = 0
+    open(script).read.each_line(chomp:true) do |line|
+      for fn in Dir.glob(line, base:bdir)
+        sum += read_yaml File.join(bdir, fn)
+      end
+    end
+    return sum
+  end
+
+  def read_yaml ymlpath
+    yml = YAML.load_file ymlpath
     for dir,entry in yml
-      dir = File.expand_path dir.to_s, base_dir
+      dir = File.expand_path dir.to_s, File.dirname(ymlpath)
       Stimming.raise_if_invalid_directory dir
       for name,field in entry
         name = name.to_s
@@ -52,6 +90,12 @@ class Stimming
 
         if !parent.empty? and !interval.nil?
           raise TriggerDuplicated, name
+        elsif !interval.nil?
+          nodetype = :interval
+        elsif !parent.empty?
+          nodetype = :event
+        else
+          nodetype = :hand
         end
 
         newnode = Node.new(
@@ -61,6 +105,7 @@ class Stimming
           options:      field['o'] || "",
           waiting:      waiting,
           parent:       parent,
+          nodetype:     nodetype,
           need_replace: need_replace,
           interval:     interval,
           log:          @log,
@@ -77,210 +122,37 @@ class Stimming
     @list.each_value(&__callee__)
     self
   end
-  alias :start :waterfall
   alias :pause :waterfall
   alias :stop  :waterfall
   alias :join  :waterfall
   undef :waterfall
+
+  def start t=nil
+    @list.each_value do |n|
+      n.start t
+      sleep 1
+    end
+    self
+  end
+
+  def touch
+    @list.each_value do |n|
+      if n.nodetype != :event
+        @thread = Thread.new { n.execute }
+        sleep 1
+      end
+    end
+  end
 
   def empty?
     @list.empty?
   end
 
   def inspect
-    @list.values.map(&:inspect).join("\n")
-  end
-end
-
-
-class Node < B::Organ
-  attr_accessor :name
-  attr_accessor :directory
-  attr_accessor :command
-  attr_accessor :options
-  attr_accessor :parent
-  attr_accessor :child
-  attr_accessor :queue
-  attr_accessor :waiting
-  attr_accessor :interval
-  attr_accessor :log
-  attr_accessor :capture
-  attr_accessor :need_replace
-
-  attr_reader   :pid
-  attr_reader   :start_time
-  attr_reader   :end_time
-
-  def initialize **h
-    @child     = [ ]
-    @thread    = nil
-    @queue     = nil
-    super(**h)
-  end
-
-  def execute table:nil
-    options = if table.nil?
-                @options
-              else
-                @options.gsub(Stimming::DoubleBracket) do
-                  table[Stimming::tokenize $1].fullpath
-                end
-              end
-    fullcmd = if options.nil? or options.empty?
-                @command
-              else
-                [@command, options].join(' ')
-              end
-    events  = if table.nil?
-                nil
-              else
-                '<-- ' + table.values.map{ |o|
-                  '(' + o.name + ')'
-                }.join('+')
-              end
-
-    fo = B::DatedFile.new dir:@capture, name:@name, ext:'out'
-    fe = B::DatedFile.new dir:@capture, name:@name, ext:'err'
-    @start_time = Time.now
-    @pid = spawn(
-      fullcmd,
-      pgroup: true,
-      chdir:  @directory,
-      out:    fo.openfile.fileno,
-      err:    fe.openfile.fileno,
-    )
-    @log.i [
-      "START (#{@name})",
-      events,
-      "pid=#{@pid}"
-    ].compact.join(' ')
-
-    Process.waitpid @pid
-    @end_time = Time.now
-    time_taken = @end_time - @start_time
-    fo.closefile
-    fe.closefile
-
-    if $?.exitstatus == 0
-      lmethod = @log.method :i
-      estatus = nil
+    if @list.empty?
+      'empty nodes.'
     else
-      lmethod = @log.method :e
-      estatus = "EXITSTATUS=#{$?.exitstatus}"
+      @list.values.map(&:inspect).join("\n")
     end
-    lmethod.call [
-      "END   (#{@name})",
-      events,
-      "pid=#{@pid}",
-      estatus,
-      B::TimeAmount.second_to_string(time_taken),
-    ].compact.join(' ')
-    @pid = nil
-    @start_time = nil
-
-    for d in @child
-      d.push fo
-    end
-    return time_taken
-  rescue Exception => err
-    @log.f [
-      err.message,
-      '(' + err.class.name + ')',
-      err.backtrace,
-    ].join("\n")
-  end
-
-  def push dtdf
-    @queue.push dtdf
-  end
-
-  def start_e
-    @thread = Thread.new do
-      until B::Trap.interrupted? or @brake
-        catch :quit do
-          cnvtbl = @waiting.to_h{ |x| [x, nil] }
-          until cnvtbl.values.all?
-            dtdf = @queue.pop
-            if dtdf.nil?
-              @brake = true
-              throw :quit
-            end
-            for k,v in cnvtbl
-              if k.include? dtdf.name
-                if v.nil?
-                  cnvtbl[k] = dtdf
-                end
-              end
-            end
-          end
-          execute table:cnvtbl
-        end # :quit
-      end
-    end
-  end
-
-  def start_t
-    @thread = Thread.new do
-      until B::Trap.interrupted? or @brake
-        execute
-        @interval.sleep
-      end
-    end
-  end
-
-  def start
-    @brake = false
-    if !@interval.nil? and !@interval.empty?
-      start_t
-    elsif !@waiting.empty?
-      if @queue.nil?
-        @queue = Thread::Queue.new
-      end
-      start_e
-    end
-  end
-
-  def stop
-    @brake = true
-    @queue.push nil unless @queue.nil?
-    begin
-      @thread.run
-    rescue ThreadError
-    end
-    @thread.join
-  end
-
-  def join
-    @thread.join
-  end
-
-  def pause
-  end
-
-  def remaining_time
-  end
-
-  def elapsed_time
-  end
-
-  def inspect
-    base = [
-      "(#{@name})",
-      "  Directory: #{@directory.inspect}",
-      "  Command:   #{@command.inspect}",
-      "  Options:   #{@options.inspect}",
-    ]
-    if !@interval.nil? and !@interval.empty?
-      base.concat [
-        "  Interval:  #{@interval.inspect}",
-      ]
-    else
-      base.concat [
-        "  Waiting:   #{@waiting.map{|x|x.join('|')}.inspect}",
-        "  Parent:    #{@parent.map(&:name)}",
-        "  Child:     #{@child.map(&:name)}",
-      ]
-    end
-    base.join "\n"
   end
 end
