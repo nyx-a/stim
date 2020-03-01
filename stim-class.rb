@@ -1,7 +1,7 @@
 
 require 'yaml'
 require_relative 'log.rb'
-require_relative 'timeamount.rb'
+require_relative 'timelength.rb'
 require_relative 'trap.rb'
 require_relative 'backdoor.rb'
 require_relative 'stim-misc.rb'
@@ -75,10 +75,7 @@ class Stimming
           begin
             opt_t = getnode Stimming.tokenize field['t']
           rescue NoSuchNode
-            interval = B::TimeAmount.new field['t'], f:0.1
-            if interval.empty?
-              raise InvalidTrigger, field['t']
-            end
+            interval = B::TimeLength.new field['t']
           end
         end
 

@@ -2,7 +2,7 @@
 require_relative 'organ.rb'
 require_relative 'trap.rb'
 require_relative 'datedfile.rb'
-require_relative 'timeamount.rb'
+require_relative 'timelength.rb'
 
 class Node < B::Organ
   attr_accessor :name
@@ -85,7 +85,7 @@ class Node < B::Organ
       events,
       "pid=#{@pid}",
       estatus,
-      B::TimeAmount.second_to_string(time_taken),
+      B::TimeLength.sec_to_hms(time_taken),
     ].compact.join(' ')
     @pid = nil
     @start_time = nil
@@ -135,7 +135,7 @@ class Node < B::Organ
     @thread = Thread.new do
       until B::Trap.interrupted? or @brake
         execute
-        @interval.sleep
+        B::Trap.sleep @interval.sec unless B::Trap.interrupted?
       end
     end
   end
@@ -185,7 +185,7 @@ class Node < B::Organ
       "  Command:   #{@command.inspect}",
       "  Options:   #{@options.inspect}",
     ]
-    if !@interval.nil? and !@interval.empty?
+    if !@interval.nil?
       base.concat [
         "  Interval:  #{@interval.inspect}",
       ]
