@@ -19,21 +19,15 @@ class B::Log
     @padding    = ' ' * Time.now.strftime(@format).length
   end
 
-  def d message
-    @logger << make('d', Time.now, message)
+  def waterfall message
+    @logger << make(__callee__, Time.now, message)
   end
-  def i message
-    @logger << make('i', Time.now, message)
-  end
-  def w message
-    @logger << make('w', Time.now, message)
-  end
-  def e message
-    @logger << make('e', Time.now, message)
-  end
-  def f message
-    @logger << make('f', Time.now, message)
-  end
+  alias :d :waterfall
+  alias :i :waterfall
+  alias :w :waterfall
+  alias :e :waterfall
+  alias :f :waterfall
+  undef :waterfall
 
   def blank
     @logger << "- #{@padding}#{@separator}\n"
@@ -61,3 +55,4 @@ class B::Log
     ].join
   end
 end
+

@@ -34,7 +34,17 @@ class B::TimeLength
     end
   end
 
+  # nil -> nil
+  # String -> Integer
   def self.parse string
+    case string
+    when String
+      # okay
+    when nil
+      return nil
+    else
+      raise TypeError, "Invalid type `#{string.class}`"
+    end
     pairs = string.scan(/(\d+(?:\.\d+)?)\s*(\p{alpha}+)/)
     if pairs.empty?
       raise "Does not contain valid time `#{string}`"
@@ -56,7 +66,7 @@ class B::TimeLength
     when Numeric
       @sec = other.to_f
     else
-      raise "Invalid type `#{other.class}`"
+      raise TypeError, "Invalid type `#{other.class}`"
     end
     self
   end
@@ -77,3 +87,4 @@ class B::TimeLength
     @sec <=> other.sec
   end
 end
+
