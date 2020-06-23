@@ -1,37 +1,67 @@
 
-require 'tempfile'
+require_relative 'tmpf.rb'
 require_relative 'os.rb'
 require_relative 'path.rb'
 
+#
 # chdir && run command
+#
 class CDCMD
   include OrganicStructure
 
-  attr_reader :directory # String
-  attr_reader :command   # String
+  attr_reader :tag       # String
+  attr_reader :capture   # B::Path
+
+  attr_reader :directory # B::Path
+  attr_reader :command   # B::Path
   attr_reader :option    # String
 
+  attr_reader :out
+  attr_reader :err
+
+  #
+  # Setter
+  #
+
+  def tag= o
+    @tag = o.to_s
+  end
+
+  def capture= o
+    @capture = B::Path.new(o).expand!
+    @capture.prepare_dir!
+  end
+
   def directory= o
-    p = B::Path.new(o).expand
-    if p.directory?
-      @directory = p.to_s
-    else
-      raise Error, "not a directory `#{o.inspect}`"
+    @directory = B::Path.new(o).expand!
+    unless @directory.directory?
+      raise Error, "not a directory -> #{o.inspect}"
     end
   end
 
   def command= o
-    p = B::Path.new(o).expand(@directory || '.')
-    if p.executable_file?
-      @command = p.to_s
-    else
-      raise Error, "not a executable file `#{o.to_s}`"
+    @command = B::Path.new(o).expand!(@directory || '.')
+    unless @command.executable_file?
+      raise Error, "not a executable file -> #{o.inspect}"
     end
   end
 
   def option= o
     @option = o&.to_s&.strip
   end
+
+  #
+  # Constructor
+  #
+
+  def after_initialize
+    @out = B::TMPF.new dir:@capture, name:@tag, suffix:'out', age:10
+    @err = B::TMPF.new dir:@capture, name:@tag, suffix:'err', age:100
+  end
+
+  #
+  # Status
+  #
 
   def is_running?
     @start != nil
@@ -41,35 +71,42 @@ class CDCMD
     @start.clone
   end
 
-  def run prefix:'', pool:'.', &block
-    prefix = "#{prefix}." unless prefix.empty?
-    out = Tempfile.create [prefix, '.out'], pool
-    err = Tempfile.create [prefix, '.err'], pool
-    @start = Time.now
-    pid = spawn(
-      "'#{@command}' #{@option}",
-      pgroup: true,
-      chdir:  @directory,
-      out:    out.fileno,
-      err:    err.fileno,
-    )
-    block&.call pid
-    Process.waitpid pid
-    te = Time.now
-    ts = @start
+  #
+  # Main Functions
+  #
+
+  def run &block
+    result = Result.new tag:@tag
+    t = B::TMPF::make_time
+    r = B::TMPF::make_random
+    @out.open time:t, random:r do |fo|
+      @err.open time:t, random:r do |fe|
+        @start = Time.now
+        pid = spawn(
+          "'#{@command.to_s}' #{@option}",
+          pgroup: true,
+          chdir:  @directory.to_s,
+          out:    fo.fileno,
+          err:    fe.fileno,
+        )
+        block&.call pid
+        Process.waitpid pid
+        result.path_out = fo.path
+        result.path_err = fe.path
+        result.pid      = pid
+      end
+    end
+    result.status     = $?.exitstatus
+    result.time_start = @start
+    result.time_end   = Time.now
+    result.time_spent = result.time_end - @start
     @start = nil
-    out.close
-    err.close
-    Result.new(
-      pid:        pid,
-      status:     $?.exitstatus,
-      path_out:   out.path,
-      path_err:   err.path,
-      time_start: ts,
-      time_end:   te,
-      time_spent: te - ts,
-    )
+    return result
   end
+
+  #
+  # Misc
+  #
 
   def signature
     [directory, command, option].join
@@ -86,8 +123,13 @@ class CDCMD
     self.signature.hash
   end
 
+  #
+  # Ancillary Classes
+  #
+
   class Result
     include OrganicStructure
+    attr_accessor :tag
     attr_accessor :pid
     attr_accessor :status
     attr_accessor :path_out

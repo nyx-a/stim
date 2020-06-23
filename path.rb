@@ -178,7 +178,7 @@ class B::Path
   end
 
   def expand_s base='.'
-    File.expand_path self.to_s, base
+    File.expand_path self.to_s, base.to_s
   end
 
   def expand base='.'
@@ -218,14 +218,15 @@ class B::Path
     end
   end
 
-  def prepare_dir base='.'
+  def prepare_dir! base='.'
     s = self.expand_s base
     if File.exist? s
       if File.directory? s
+        self.en_dir! # <- destructive
         if File.writable? s
           # ok
         else
-          raise "None writable `#{s}`"
+          raise "Not writable `#{s}`"
         end
       else
         raise "Not a directory `#{s}`"

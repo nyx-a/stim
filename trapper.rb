@@ -1,28 +1,24 @@
 
 module Trapper
-  def self.procedure= p
-    @procedure = p
-  end
+  Signal.trap(:INT ) { self.wake }
+  Signal.trap(:TERM) { self.wake }
 
   def self.sleep
-    @sleeper = Thread.new { Kernel.sleep }
+    @sleeper = Thread.new do
+      Kernel.sleep
+      yield if block_given?
+    end
     @sleeper.join
+    nil
   end
 
   def self.wake
     begin
-      @sleeper.run
+      @sleeper&.run&.join
     rescue ThreadError
+      # do nothing.
       # sleeper thread is already dead.
     end
   end
-
-  @command = -> sno do
-    @procedure&.call "#{Signal.signame(sno)}(#{sno})"
-    self.wake
-  end
-
-  Signal.trap :INT, @command
-  Signal.trap :TERM, @command
 end
 

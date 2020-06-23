@@ -7,27 +7,41 @@ end
 
 class B::Log
   def initialize(
-    output,
+    file:,
     age:       3,
     size:      1_000_000,
     format:    '%F %T.%1N',
     separator: ' | '
   )
-    @logger     = Logger.new(output, age, size)
+    @logger     = Logger.new file, age, size
     @format     = format
     @separator  = separator
     @padding    = ' ' * Time.now.strftime(@format).length
+    @inactive   = { }
   end
 
-  def waterfall message
-    @logger << make(__callee__, Time.now, message)
+  def output message
+    unless @inactive[__callee__]
+      @logger << make(__callee__, Time.now, message)
+    end
   end
-  alias :d :waterfall
-  alias :i :waterfall
-  alias :w :waterfall
-  alias :e :waterfall
-  alias :f :waterfall
-  undef :waterfall
+  LEVELS = 'diwef'.freeze
+  LEVELS.each_char { |c| alias_method c, :output }
+  undef :output
+
+  def loglevel= letter
+    i = LEVELS.index letter.to_s.downcase.chr
+    if i.nil?
+      return nil
+    end
+    for x in LEVELS[...i].each_char
+      @inactive[x.to_sym] = true
+    end
+    for x in LEVELS[i..].each_char
+      @inactive[x.to_sym] = false
+    end
+    LEVELS[i]
+  end
 
   def blank
     @logger << "- #{@padding}#{@separator}\n"

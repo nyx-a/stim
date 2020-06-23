@@ -358,8 +358,8 @@ module B
         [
           "--#{k}#{v.plural ? '(*)' : ''}",
           v.type.name.split('::').last,
-          v.description,
           v.default,
+          v.description,
         ]
       end.reject{ |i| i[1].nil? }
 
@@ -368,7 +368,7 @@ module B
       end
       matrix.map do |row|
         (' ' * indent) +
-          "%-*s [%-*s] %-*s : %*s" % longest.zip(row).flatten
+          "%-*s %-*s ( %-*s ) %-*s" % longest.zip(row).flatten
       end.join "\n"
     end
 

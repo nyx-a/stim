@@ -16,11 +16,12 @@ module OrganicStructure
         raise KeyError, "Unknown element #{k.inspect}"
       end
     end
+    after_initialize if respond_to? :after_initialize
   end
 
-  def to_hash
+  def to_hash m=:to_s
     instance_variables.map do |n|
-      [ n[1..], instance_variable_get(n) ]
+      [ n[1..].send(m), instance_variable_get(n) ]
     end.to_h
   end
 

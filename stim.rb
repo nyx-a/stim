@@ -3,43 +3,45 @@
 require_relative 'log.rb'
 require_relative 'controller.rb'
 require_relative 'property.rb'
-require_relative 'trapper.rb'
 
 #- Option
 begin
   opt = B::Property.new(
-    'Daemonize'   => B::Boolean,
+    'daemonize'   => B::Boolean,
     'bindIp'      => String,
     'port'        => Integer,
-    'dir-home'    => B::Path,
-    'dir-capture' => String,
+    'home'        => B::Path,
+    'capture'     => String,
     'file-log'    => String,
     'file-pid'    => String,
     'log-age'     => Integer,
     'log-size'    => Integer,
+    'log-level'   => Symbol,
     'help'        => B::Boolean,
   )
   opt.default(
-    'Daemonize'   => false,
+    'daemonize'   => false,
     'bindIp'      => '127.0.0.1',
     'port'        => 57133,
-    'dir-home'    => '~/.stim.d',
-    'dir-capture' => 'capture',
+    'home'        => '~/.stim.d',
+    'capture'     => 'capture',
     'file-log'    => 'log.stim.log',
     'file-pid'    => 'num.stim.pid',
     'log-age'     => 5,
     'log-size'    => 1_000_000,
+    'log-level'   => 'Information',
   )
   opt.description(
-    'Daemonize'   => 'run as a daemon',
+    'daemonize'   => 'run as a daemon',
     'bindIp'      => 'drb binding IP',
     'port'        => 'drb port',
-    'dir-home'    => 'home directory for stim',
-    'dir-capture' => 'capture directory',
+    'home'        => 'home directory for stim',
+    'capture'     => 'capture directory',
     'file-log'    => 'log file',
     'file-pid'    => 'pid file',
     'log-age'     => 'log rotation age',
     'log-size'    => 'log file size',
+    'log-level'   => 'log level',
     'help'        => 'show this message',
   )
 
@@ -53,11 +55,11 @@ begin
     exit
   end
 
-  opt['dir-home'].prepare_dir
-  path_pid  = opt['dir-home'] + opt['file-pid']
-  path_log  = opt['dir-home'] + opt['file-log']
-  path_capd = opt['dir-home'] + opt['dir-capture']
-  path_capd.prepare_dir
+  opt['home'].expand!.prepare_dir!
+  path_pid  = opt['home'] + opt['file-pid']
+  path_log  = opt['home'] + opt['file-log']
+  path_capd = opt['home'] + opt['capture']
+  path_capd.prepare_dir!
 rescue => err
   STDERR.puts err.message
   STDERR.puts
@@ -65,9 +67,9 @@ rescue => err
 end
 
 #- Daemon
-if opt['Daemonize']
+if opt['daemonize']
   if path_pid.exist?
-    STDERR.puts "file '#{path_pid.expand_s}' already exists."
+    STDERR.puts "file '#{path_pid.to_s}' already exists."
     STDERR.puts
     exit 1
   end
@@ -80,38 +82,38 @@ end
 
 #- Log
 log = B::Log.new(
-  path_log.expand_s,
+  file:   (opt['daemonize'] ? path_log.to_s : STDOUT),
   format: '%m-%d %T',
   age:    opt['log-age'],
   size:   opt['log-size'],
 )
 log.i "Process started. PID=#{$$}"
+log.loglevel = opt['log-level']
+log.i "Loglevel changed to #{opt['log-level']}"
 at_exit do
+  sleep 1
   log.i "Process terminated. PID=#{$$}"
   log.gap
 end
 
 #- Main
 begin
-
-  s = Controller.new path_capd, 30, log, opt['bindIp'], opt['port']
-
-  Trapper.procedure = -> signal do
-    puts "#{signal} Trapped."
-    s.eject_all
-  end
-
+  s = Controller.new(
+    path_capd,
+    30,
+    log,
+    opt['bindIp'],
+    opt['port'],
+    opt['home'],
+  )
   for f in opt.bare
-    log.i "Loading configure file: '#{f}'"
     s.load f
   end
 
   at_exit do
     s.stop_all
-    puts 'bye.'
   end
-
-  opt['Daemonize'] ? Trapper.sleep : binding.irb
+  s.sleep
 
 rescue Exception => err
   log.f [
