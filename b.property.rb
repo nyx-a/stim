@@ -3,7 +3,11 @@ require 'yaml'
 require_relative 'b.path.rb'
 
 module B
-  # - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  #
+  #- - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  #
+
   class Boolean
     def initialize s
       @b = parse s
@@ -36,21 +40,47 @@ module B
     end
   end
 
-  # - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  #
+  #- - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  #
+
   class Item
-    attr_accessor :key # for reverse resolve
-    attr_reader   :type
-    attr_accessor :plural
-    attr_reader   :checker
-    attr_reader   :default
-    attr_reader   :value
-    attr_accessor :description
+    attr_reader :key
+    attr_reader :type
+    attr_reader :short # single letter alias of key
+    attr_reader :is_plural
+    attr_reader :checker
+    attr_reader :default
+    attr_reader :value
+    attr_reader :description
+
+    def key= k
+      @key = k.to_sym
+    end
 
     def type= t
       if t != nil and t.class != Class
         raise "(#{@key}) Not a class `#{t}`"
       end
       @type = t
+    end
+
+    def short= s
+      unless s.nil?
+        if s.length != 1
+          raise "(#{@key}) Short alias mustbe 1 letter `#{s}`"
+        end
+      end
+      @short = s
+    end
+
+    def is_plural= p
+      case
+      when true,false,nil
+        @is_plural = p
+      else
+        raise "(#{@key}) is_plural mustbe true/false `#{p}`"
+      end
     end
 
     def checker= c
@@ -64,7 +94,7 @@ module B
       @checker = c
     end
 
-    def transform v
+    def normalize v
       nv = if v.nil?
              nil
            elsif @type == v.class
@@ -93,23 +123,27 @@ module B
           ].join(' ')
         end
       end
-      return @plural ? [nv] : nv
+      return @is_plural ? [nv] : nv
     end
 
     def value= v
-      @value = self.transform v
+      @value = self.normalize v
     end
 
     def default= v
-      @default = self.transform v
+      @default = self.normalize v
+    end
+
+    def description= d
+      @description = d&.to_s
     end
 
     def << v
-      nv = self.transform v
+      nv = self.normalize v
       if @value.nil?
         @value = nv
       else
-        if @plural
+        if @is_plural
           @value.concat nv
         else
           raise "Crowding values for `#{@key}`"
@@ -140,19 +174,21 @@ module B
     def initialize(
       key:         nil,
       type:        nil,
-      plural:      nil,
+      short:       nil,
+      is_plural:   nil,
       checker:     nil,
       default:     nil,
       value:       nil,
       description: nil
     )
-      @key         = key
-      self.type    = type
-      @plural      = plural
-      self.checker = checker
-      self.default = default
-      self.value   = value
-      @description = description
+      self.key         = key
+      self.type        = type
+      self.short       = short
+      self.is_plural   = is_plural
+      self.checker     = checker
+      self.default     = default
+      self.value       = value
+      self.description = description
 
       if @type == B::Boolean and @default.nil?
         self.default = false
@@ -165,13 +201,17 @@ module B
     end
   end
 
-  # - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  #
+  #- - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  #
+
   class Property
     attr_reader :bare
 
     def initialize key_type_hash
-      @bare = [ ]
-      @contents = { } # :key => Item
+      @bare      = [ ]
+      @contents  = { } # :longkey  => Item
+      @shorthash = { } # :shortkey => Item
       for k,t in key_type_hash
         self.add key:k, type:t
       end
@@ -180,27 +220,43 @@ module B
     def add(
       key:,
       type:        nil,
-      plural:      nil,
+      short:       nil,
+      is_plural:   nil,
       checker:     nil,
       default:     nil,
       value:       nil,
       description: nil
     )
       key = key.to_sym
-      @contents[key] = Item.new(
+      item = Item.new(
         key:         key,
         type:        type,
-        plural:      plural,
+        short:       short.to_sym,
+        is_plural:   is_plural,
         checker:     checker,
         default:     default,
         value:       value,
         description: description
       )
+      @contents[key] = item
+      if item.short
+        if @shorthash.key? item.short
+          raise "The short option is duplicated `#{item.short}`"
+        else
+          @shorthash[item.short] = item
+        end
+      end
+    end
+
+    def short key_short_hash
+      for k,s in key_short_hash
+        fetch(k).short = s.to_sym
+      end
     end
 
     def multiply *keys
       for k in keys
-        fetch(k).plural = true
+        fetch(k).is_plural = true
       end
     end
 
@@ -222,22 +278,16 @@ module B
       end
     end
 
-    def filter_option array
+    def parse_option array
+      @bare.clear
       eoo = array.index '--' # end of options
       if eoo
         @bare = array[ eoo+1 .. -1    ]
         array = array[ 0     .. eoo-1 ]
       end
-      array.map{ |i|
-        # protect empty string from split().flatten()
-        i.empty? ? '' : i.split('=', 2)
-      }.flatten
-    end
 
-    def parse_option array
-      @bare.clear
       current = nil
-      for v in filter_option array
+      for v in array
         op_sym = key_identify v
         if op_sym.nil?
           if current.nil?
@@ -263,22 +313,18 @@ module B
       when /^--/
         $'.to_sym if fetch $'
       when /^-(?!-)/
-        intro_quiz $'
+        fetch_short($')&.key
       else
         nil
       end
     end
 
-    def intro_quiz s
-      r = @contents.keys.grep(/^#{Regexp.escape s}/)
-      case r.size
-      when 0
-        raise KeyError, "Doesn't match for any key `#{s}`"
-      when 1
-        r.first
-      else
-        raise KeyError, "Ambiguous key `#{s}`"
+    def fetch_short s
+      s = s.to_sym
+      unless @shorthash.key? s
+        raise KeyError, "Unknown short key `#{s}`"
       end
+      @shorthash[s]
     end
 
     def fetch k
@@ -356,7 +402,7 @@ module B
     def help indent:2
       matrix = @contents.map do |k,v|
         [
-          "--#{k}#{v.plural ? '(*)' : ''}",
+          "--#{k}#{v.is_plural ? '(*)' : ''}",
           v.type.name.split('::').last,
           v.default,
           v.description,
