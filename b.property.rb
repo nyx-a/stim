@@ -1,6 +1,6 @@
 
 require 'yaml'
-require_relative 'path.rb'
+require_relative 'b.path.rb'
 
 module B
   # - - - - - - - - - - - - - - - - - - - - - - - - - - - -

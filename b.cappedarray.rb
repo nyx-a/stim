@@ -1,5 +1,8 @@
 
-class CappedArray < Array
+module B
+end
+
+class B::CappedArray < Array
   attr_accessor :limit
   attr_accessor :destructor
 

@@ -2,14 +2,14 @@
 require 'drb/drb'
 require 'rinda/tuplespace'
 require 'yaml'
-require_relative 'cdcmd.rb'
-require_relative 'ca.rb'
-require_relative 'os.rb'
-require_relative 'tl.rb'
+require_relative 'b.cdcmd.rb'
+require_relative 'b.cappedarray.rb'
+require_relative 'b.structure.rb'
+require_relative 'b.timelength.rb'
 
 
 class Job
-  include OrganicStructure
+  include B::Structure
   attr_accessor :is_active   # Boolean
   attr_accessor :cdcmd       # CDCMD
   attr_accessor :interval    # Integer
@@ -19,7 +19,7 @@ class Job
 end
 
 class Stimulant
-  include OrganicStructure
+  include B::Structure
   attr_accessor :id          # "identifier"
   attr_accessor :direction   # %i(inbound outbound)
   attr_accessor :instruction # %i(eject pause resume)
@@ -84,8 +84,8 @@ class Controller
     @job[id] = Job.new(
       is_active: true,
       interval:  i,
-      history:   CappedArray.new(@historylimit),
-      cdcmd:     CDCMD.new(
+      history:   B::CappedArray.new(@historylimit),
+      cdcmd:     B::CDCMD.new(
         tag:       id,
         capture:   @pool,
         directory: d,

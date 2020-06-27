@@ -1,8 +1,8 @@
 #! /usr/bin/env ruby
 
-require_relative 'log.rb'
+require_relative 'b.log.rb'
+require_relative 'b.property.rb'
 require_relative 'controller.rb'
-require_relative 'property.rb'
 
 #- Option
 begin

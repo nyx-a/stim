@@ -1,5 +1,8 @@
 
-module OrganicStructure
+module B
+end
+
+module B::Structure
   def clear padding=nil
     for sym in public_methods(false).grep(/(?<!=)=$/)
       instance_variable_set "@#{sym.to_s.chop}", padding

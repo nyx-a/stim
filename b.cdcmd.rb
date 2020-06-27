@@ -1,13 +1,16 @@
 
-require_relative 'tmpf.rb'
-require_relative 'os.rb'
-require_relative 'path.rb'
+require_relative 'b.tmpf.rb'
+require_relative 'b.structure.rb'
+require_relative 'b.path.rb'
+
+module B
+end
 
 #
 # chdir && run command
 #
-class CDCMD
-  include OrganicStructure
+class B::CDCMD
+  include B::Structure
 
   attr_reader :tag       # String
   attr_reader :capture   # B::Path
@@ -128,7 +131,7 @@ class CDCMD
   #
 
   class Result
-    include OrganicStructure
+    include B::Structure
     attr_accessor :tag
     attr_accessor :pid
     attr_accessor :status
