@@ -81,7 +81,7 @@ class B::CDCMD
   def run &block
     result = Result.new tag:@tag
     t = B::TMPF::make_time
-    r = B::TMPF::make_random
+    r = B::TMPF::make_random 4
     @out.open time:t, random:r do |fo|
       @err.open time:t, random:r do |fe|
         @start = Time.now
@@ -92,7 +92,7 @@ class B::CDCMD
           out:    fo.fileno,
           err:    fe.fileno,
         )
-        block&.call pid
+        block&.call pid, r
         Process.waitpid pid
         result.path_out = fo.path
         result.path_err = fe.path

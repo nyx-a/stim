@@ -97,8 +97,8 @@ class Controller
   end
 
   def execute id, duration:3600
-    result = @job[id].cdcmd.run do |pid|
-      @log.i "START #{id} (pid:#{pid})"
+    result = @job[id].cdcmd.run do |pid, token|
+      @log.i "START #{id} (#{pid},#{token})"
     end
     ts_s = B::TimeLength.sec_to_hms result.time_spent
 

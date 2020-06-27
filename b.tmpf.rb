@@ -19,8 +19,8 @@ class B::TMPF
     ]
   end
 
-  def self.make_random
-    SecureRandom.alphanumeric 5
+  def self.make_random n=5
+    SecureRandom.alphanumeric n
   end
 
   #
@@ -74,7 +74,7 @@ class B::TMPF
       del = true
     else
       unless @history.empty?
-        lasttime = File.open(@history.last, "rb").read
+        lasttime = File.open(@history.last, "rb").read rescue nil
         if body == lasttime
           del = true
         end
