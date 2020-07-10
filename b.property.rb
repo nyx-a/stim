@@ -9,7 +9,7 @@ end
 class B::Item
   attr_reader :key
   attr_reader :type
-  attr_reader :short # single letter alias of key
+  attr_reader :short # single letter alias for the key
   attr_reader :is_plural
   attr_reader :checker
   attr_reader :default
@@ -62,8 +62,16 @@ class B::Item
          elsif @type == v.class
            v.clone
          elsif @type == Integer
+           if v !~ /\d/
+             raise ArgumentError,
+               "doesn't look like a Integer `#{v}`"
+           end
            v.to_i
          elsif @type == Float
+           if v !~ /\d/
+             raise ArgumentError,
+               "doesn't look like a Float `#{v}`"
+           end
            v.to_f
          elsif @type == Symbol
            v.to_sym
@@ -78,7 +86,7 @@ class B::Item
          end
     unless @checker.nil?
       unless @checker === nv
-        raise [
+        raise ArgumentError, [
           "[#{@key}] Rejected by checker",
           @checker.inspect,
           "`#{nv.inspect}`",
@@ -131,6 +139,10 @@ class B::Item
     else
       raise "Non-Boolean-Item cannot be flipped `#{@key}`"
     end
+  end
+
+  def multiply!
+    @value = @value.nil? ? [ ] : [@value].flatten
   end
 
   def initialize(
@@ -212,13 +224,19 @@ class B::Property
 
   def short key_short_hash
     for k,s in key_short_hash
-      fetch(k).short = s.to_sym
+      s = s.to_sym
+      i = fetch k
+      i.short = s
+      @shorthash[s] = i
     end
   end
 
   def multiply *keys
-    for k in keys
-      fetch(k).is_plural = true
+    for k in keys.flatten
+      k = k.to_sym
+      i = fetch k
+      i.is_plural = true
+      i.multiply!
     end
   end
 
@@ -240,48 +258,48 @@ class B::Property
     end
   end
 
-  def parse_option array
+  def parse array
     @bare.clear
     eoo = array.index '--' # end of options
     if eoo
-      @bare = array[ eoo+1 .. -1    ]
+      bare  = array[ eoo+1 .. -1    ]
       array = array[ 0     .. eoo-1 ]
     end
-
-    current = nil
-    for v in array
-      op_sym = key_identify v
-      if op_sym.nil?
-        if current.nil?
-          @bare.push v
+    re = /^-{1,2}(?=[^-])/
+    for c in array.chunk_while{ |l,r| l =~ re and r !~ re }
+      first  = c[0]
+      second = c[1]
+      case first
+      when /^-{1}(?=[^-])/ # short
+        letters = $~.post_match.chars
+        if fetch_short(letters.last).type == B::Boolean
+          @bare.push second if second
         else
-          @contents[current] << v
-          current = nil
+          ll = letters.pop # last letter
+          if second.nil?
+            raise "No params for Non-Boolean-Item `#{ll}`"
+          end
+          fetch_short(ll) << second
+        end
+        for b in letters
+          fetch_short(b).flip!
+        end
+      when /^-{2}(?=[^-])/ # long
+        op = $~.post_match
+        if second.nil?
+          fetch(op).flip!
+        else
+          fetch(op) << second
         end
       else
-        @contents[current].flip! if current
-        current = op_sym
+        @bare.push first
       end
     end
-    @contents[current].flip! if current
-  end
-
-  # non option token -> nil
-  # valid option     -> Symbol
-  def key_identify token
-    case token
-    when /^-+$/
-      nil
-    when /^--/
-      $'.to_sym if fetch $'
-    when /^-(?!-)/
-      fetch_short($')&.key
-    else
-      nil
-    end
+    @bare.concat bare if bare
   end
 
   def fetch_short s
+    raise KeyError, "nil was given for key" if s.nil?
     s = s.to_sym
     unless @shorthash.key? s
       raise KeyError, "Unknown short key `#{s}`"
@@ -290,6 +308,7 @@ class B::Property
   end
 
   def fetch k
+    raise KeyError, "nil was given for key" if k.nil?
     k = k.to_sym
     unless @contents.key? k
       raise KeyError, "Unknown key `#{k}`"
@@ -298,6 +317,7 @@ class B::Property
   end
 
   def fetch! k
+    raise KeyError, "nil was given for key" if k.nil?
     k = k.to_sym
     @contents[k] or (@contents[k] = Item.new(key:k))
   end
@@ -311,6 +331,7 @@ class B::Property
   end
 
   def raise_if_blank *keys
+    keys = keys.flatten
     keys = @contents.keys if keys.empty?
     blankkeys = keys.select{ |k| self[k.to_sym].nil? }
     unless blankkeys.empty?
@@ -362,42 +383,45 @@ class B::Property
   end
 
   def help indent:2
-    matrix = @contents.map do |k,v|
+    matrix = @contents.select{|k,v|v.type}.map do |k,v|
       [
-        "--#{k}#{v.is_plural ? '(*)' : ''}",
+        "--#{k}#{v.is_plural ? '*' : ''}",
+        (v.short ? "-#{v.short}" : ""),
         v.type.name.split('::').last,
-        v.default,
+        v.projection,
         v.description,
       ]
-    end.reject{ |i| i[1].nil? }
-
+    end
     longest = matrix.transpose.map do |column|
       column.map(&:to_s).map(&:size).max
     end
     matrix.map do |row|
-      (' ' * indent) +
-        "%-*s %-*s ( %-*s ) %-*s" % longest.zip(row).flatten
+      "#{' ' * indent}%-*s %*s %-*s ( %-*s ) %-*s" %
+        longest.zip(row).flatten
     end.join "\n"
   end
 
   def inspect
     matrix = @contents.map do |k,v|
       [
-        k,
-        v.type&.inspect,
+        "#{k}#{v.is_plural ? '*' : ''}",
+        v.short,
+        v.type&.name&.split('::')&.last,
         v.value&.inspect,
         v.default&.inspect,
         v.checker&.inspect,
+        v.description&.to_s,
       ]
     end
-    matrix.unshift %w(Key Type Value Default Checker)
+    matrix.unshift %w(Key K Type Value Default Chk Desc)
     longest = matrix.transpose.map do |column|
       column.map(&:to_s).map(&:size).max
     end
     aos = matrix.map do |row|
-      "|%-*s|%-*s|%-*s|%-*s|%-*s|" % longest.zip(row).flatten
+      "|%-*s|%*s|%-*s|%-*s|%-*s|%-*s|%-*s|" %
+        longest.zip(row).flatten
     end
-    bar = "+%s+%s+%s+%s+%s+" % longest.map{ |l| '-' * l }
+    bar = "+%s+%s+%s+%s+%s+%s+%s+" % longest.map{|l| '-' * l}
     aos.insert(-1, bar)
     aos.insert( 1, bar)
     aos.insert( 0, bar)

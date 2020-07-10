@@ -8,7 +8,8 @@ class B::Boolean
     when true,  /^\s*(?:t|true |on |yes)\s*$/ix; true
     when false, /^\s*(?:f|false|off|no )\s*$/ix; false
     else
-      raise "Doesn't look like a Boolean `#{s}`"
+      raise ArgumentError,
+        "Doesn't look like a Boolean `#{s}`"
     end
   end
 

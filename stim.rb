@@ -7,45 +7,52 @@ require_relative 'controller.rb'
 #- Option
 begin
   opt = B::Property.new(
-    'daemonize'   => B::Boolean,
-    'bindIp'      => String,
-    'port'        => Integer,
-    'home'        => B::Path,
-    'capture'     => String,
-    'file-log'    => String,
-    'file-pid'    => String,
-    'log-age'     => Integer,
-    'log-size'    => Integer,
-    'log-level'   => Symbol,
-    'help'        => B::Boolean,
+    'daemonize' => B::Boolean,
+    'bind'      => String,
+    'port'      => Integer,
+    'home'      => B::Path,
+    'capture'   => String,
+    'pid-file'  => String,
+    'log-file'  => String,
+    'log-age'   => Integer,
+    'log-size'  => Integer,
+    'log-level' => Symbol,
+    'help'      => B::Boolean,
+  )
+  opt.short(
+    'daemonize' => :d,
+    'bind'      => :b,
+    'port'      => :p,
+    'home'      => :H,
+    'help'      => :h,
   )
   opt.default(
-    'daemonize'   => false,
-    'bindIp'      => '127.0.0.1',
-    'port'        => 57133,
-    'home'        => '~/.stim.d',
-    'capture'     => 'capture',
-    'file-log'    => 'log.stim.log',
-    'file-pid'    => 'num.stim.pid',
-    'log-age'     => 5,
-    'log-size'    => 1_000_000,
-    'log-level'   => 'Information',
+    'daemonize' => false,
+    'bind'      => '127.0.0.1',
+    'port'      => 57133,
+    'home'      => '~/.stim.d',
+    'capture'   => 'capture',
+    'pid-file'  => 'num.stim.pid',
+    'log-file'  => 'log.stim.log',
+    'log-age'   => 5,
+    'log-size'  => 1_000_000,
+    'log-level' => 'Information',
   )
   opt.description(
-    'daemonize'   => 'run as a daemon',
-    'bindIp'      => 'drb binding IP',
-    'port'        => 'drb port',
-    'home'        => 'home directory for stim',
-    'capture'     => 'capture directory',
-    'file-log'    => 'log file',
-    'file-pid'    => 'pid file',
-    'log-age'     => 'log rotation age',
-    'log-size'    => 'log file size',
-    'log-level'   => 'log level',
-    'help'        => 'show this message',
+    'daemonize' => 'run as a daemon',
+    'bind'      => 'drb binding IP',
+    'port'      => 'drb port',
+    'home'      => 'home directory for stim',
+    'capture'   => 'capture directory',
+    'pid-file'  => 'pid file',
+    'log-file'  => 'log file',
+    'log-age'   => 'log rotation age',
+    'log-size'  => 'log file size',
+    'log-level' => 'log level',
+    'help'      => 'show this message',
   )
 
-  opt.parse_option ARGV
+  opt.parse ARGV
   if opt['help']
     puts "Usage:"
     puts "  $ #{$0} options and files"
@@ -54,10 +61,9 @@ begin
     puts
     exit
   end
-
   opt['home'].expand!.prepare_dir!
-  path_pid  = opt['home'] + opt['file-pid']
-  path_log  = opt['home'] + opt['file-log']
+  path_pid  = opt['home'] + opt['pid-file']
+  path_log  = opt['home'] + opt['log-file']
   path_capd = opt['home'] + opt['capture']
   path_capd.prepare_dir!
 rescue => err
@@ -102,7 +108,7 @@ begin
     path_capd,
     30,
     log,
-    opt['bindIp'],
+    opt['bind'],
     opt['port'],
     opt['home'],
   )

@@ -9,8 +9,7 @@ end
 #
 # chdir && run command
 #
-class B::CDCMD
-  include B::Structure
+class B::CDCMD < B::Structure
 
   attr_reader :tag       # String
   attr_reader :capture   # B::Path
@@ -57,7 +56,8 @@ class B::CDCMD
   # Constructor
   #
 
-  def after_initialize
+  def initialize **h
+    super(**h)
     @out = B::TMPF.new dir:@capture, name:@tag, suffix:'out', age:10
     @err = B::TMPF.new dir:@capture, name:@tag, suffix:'err', age:100
   end
@@ -130,8 +130,7 @@ class B::CDCMD
   # Ancillary Classes
   #
 
-  class Result
-    include B::Structure
+  class Result < B::Structure
     attr_accessor :tag
     attr_accessor :pid
     attr_accessor :status
@@ -140,9 +139,6 @@ class B::CDCMD
     attr_accessor :time_start
     attr_accessor :time_end
     attr_accessor :time_spent
-    def unlink
-      File.unlink @path_out, @path_err
-    end
   end
 
   class Error < StandardError

@@ -8,8 +8,7 @@ require_relative 'b.structure.rb'
 require_relative 'b.timelength.rb'
 
 
-class Job
-  include B::Structure
+class Job < B::Structure
   attr_accessor :is_active   # Boolean
   attr_accessor :cdcmd       # CDCMD
   attr_accessor :interval    # Integer
@@ -18,8 +17,7 @@ class Job
   attr_accessor :thread      # Thread
 end
 
-class Stimulant
-  include B::Structure
+class Stimulant < B::Structure
   attr_accessor :id          # "identifier"
   attr_accessor :direction   # %i(inbound outbound)
   attr_accessor :instruction # %i(eject pause resume)
@@ -97,13 +95,15 @@ class Controller
   end
 
   def execute id, duration:3600
-    result = @job[id].cdcmd.run do |pid, token|
-      @log.i "START #{id} (#{pid},#{token})"
+    token = nil
+    result = @job[id].cdcmd.run do |pid, t|
+      token = t.inspect
+      @log.i "START #{id} (#{pid} #{token})"
     end
     ts_s = B::TimeLength.sec_to_hms result.time_spent
 
     m = result.status==0 ? :i : :e
-    @log.send m, "END   #{id} (pid:#{result.pid}) #{ts_s}"
+    @log.send m, "END   #{id} (#{result.pid} #{token}) #{ts_s}"
     @job[id].history.push result
     tuple = Stimulant[
       id:        id,
@@ -126,16 +126,17 @@ class Controller
   end
 
   def send_run pattern=//
-    send_event :hand_execution, pattern
+    send_event :hand_execution, pattern, 1
   end
 
-  def send_event command, pattern=//
+  def send_event command, pattern=//, slp=0
     for identifier in @job.keys.grep pattern
       @tuplespace.write Stimulant[
         id:          identifier,
         direction:   :inbound,
         instruction: command,
       ]
+      Kernel.sleep slp
     end
   end
 
@@ -157,14 +158,6 @@ class Controller
   def stop_thread id
     send_eject id
     @job[id]&.thread&.join
-  end
-
-  def pause_all
-    @job.keys.each { |id| send_pause id }
-  end
-
-  def resume_all
-    @job.keys.each { |id| send_resume id }
   end
 
   def eject_all
@@ -270,10 +263,10 @@ class Controller
           break
         when :pause
           @job[id].is_active = false
-          @log.i "[Pause] #{id}"
+          @log.i "PAUSE #{id}"
         when :resume
           @job[id].is_active = true
-          @log.i "[Resume] #{id}"
+          @log.i "RESUME #{id}"
         else
           execute id
         end

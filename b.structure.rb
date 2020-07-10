@@ -2,7 +2,7 @@
 module B
 end
 
-module B::Structure
+class B::Structure
   def clear padding=nil
     for sym in public_methods(false).grep(/(?<!=)=$/)
       instance_variable_set "@#{sym.to_s.chop}", padding
@@ -19,17 +19,27 @@ module B::Structure
         raise KeyError, "Unknown element #{k.inspect}"
       end
     end
-    after_initialize if respond_to? :after_initialize
   end
 
-  def to_hash m=:to_s
+  def to_hash k:'to_s', v:'itself'
     instance_variables.map do |n|
-      [ n[1..].send(m), instance_variable_get(n) ]
+      [
+        n[1..].send(k),
+        instance_variable_get(n)&.send(v),
+      ]
     end.to_h
   end
 
-  def inspect
-    self.class.name + to_hash.inspect
+  def inspect indent:1
+    longest = instance_variables.map(&:size).max - 1
+    lines = instance_variables.map do |n|
+      "#{' ' * indent}%-*s = %s" % [
+        longest,
+        n[1..],
+        instance_variable_get(n).inspect,
+      ]
+    end.join "\n"
+    "#{self.class.name} {\n#{lines}\n}"
   end
 end
 
