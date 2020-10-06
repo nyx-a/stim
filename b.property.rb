@@ -182,7 +182,7 @@ end
 class B::Property
   attr_reader :bare
 
-  def initialize key_type_hash
+  def initialize key_type_hash={ }
     @bare      = [ ]
     @contents  = { } # :longkey  => Item
     @shorthash = { } # :shortkey => Item
@@ -202,6 +202,9 @@ class B::Property
     description: nil
   )
     key = key.to_sym
+    if @contents.key? key
+      raise "Key duplicated `#{key}`"
+    end
     item = B::Item.new(
       key:         key,
       type:        type,
@@ -219,6 +222,12 @@ class B::Property
       else
         @shorthash[item.short] = item
       end
+    end
+  end
+
+  def list_add *seq
+    for i in seq.flatten
+      self.add(**i)
     end
   end
 
@@ -380,6 +389,12 @@ class B::Property
     @contents.to_h do |k,v|
       [ k, v.projection ]
     end
+  end
+
+  def show_help_and_exit o=STDOUT, indent:2
+    o.puts O.help indent:indent
+    o.puts
+    Kernel.exit
   end
 
   def help indent:2

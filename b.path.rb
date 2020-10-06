@@ -4,6 +4,7 @@ module B
 end
 
 class B::Path
+
   def initialize s=nil
     case s
     when NilClass
@@ -43,6 +44,13 @@ class B::Path
     n
   end
 
+  def replace o
+    unless o.is_a? self.class
+      raise "Can't replace with `#{o.class}`"
+    end
+    @tube.replace o.tube
+  end
+
   def to_s tail:true
     e = (!tail and self.branch?) ? -2 : -1
     File.join @tube[0..e]
@@ -58,29 +66,34 @@ class B::Path
     c.to_s tail:tail
   end
 
-  def filename= s
-    if @tube.empty?
-      self.parse s
+  def filename= other
+    opath = self.class.new other
+    if self.empty?
+      self.replace opath
     else
-      p = self.class.new s
-      nf = if p.empty?
-             ''
-           else
-             if p.absolute?
-               p.tube.shift
-               self.en_dir!
-             end
-             p.tube
-           end
-      @tube[-1,1] = nf
+      case
+      when opath.empty?
+        @tube[-1,1] = ''
+      when opath.absolute?
+        self.un_dir!
+        @tube.concat opath.tube[1..]
+      else
+        @tube[-1,1] = opath.tube
+      end
     end
     self
   end
 
-  def dirname= s
-    f = self.filename
-    self.parse(s).en_dir!
-    self.filename = f
+  def dirname= other
+    fname = self.filename
+    opath = self.class.new other
+    if opath.empty?
+      @tube.replace [fname]
+    else
+      self.replace opath.en_dir!
+      @tube[-1,1] = fname
+    end
+    self
   end
 
   def dir_a
@@ -134,13 +147,14 @@ class B::Path
     @tube.first&.empty?
   end
 
-  def relative?
-    case @tube.first
-    when '.', '..', '~'
-      true
-    else
-      false
-    end
+  def relativize!
+    @tube.shift if self.absolute?
+    self
+  end
+
+  def absolutize!
+    @tube.unshift '' unless self.absolute?
+    self
   end
 
   def is_dir?
@@ -249,22 +263,32 @@ class B::Path
     %Q`#{self.class.name}"#{self.to_s}"`
   end
 
+  #
+  # for XDG
+  #
+
+  XDG_CONFIG_HOME = self.new(
+    ENV['XDG_CONFIG_HOME'] || "#{ENV['HOME']}/.config"
+  )
+  XDG_CONFIG_DIRS = (
+    ENV['XDG_CONFIG_DIRS']&.split(':') || ["/etc/xdg"]
+  ).map{ |x| self.new x }
+
+  def find_xdg_config
+    mock = self.deepclone.relativize!
+    for d in [XDG_CONFIG_HOME] + XDG_CONFIG_DIRS
+      full = d + mock
+      return full if full.exist?
+    end
+    return nil
+  end
+
   protected
 
   def tube
     @tube
   end
-
-  def short! n
-    ab = self.absolute?
-    @tube.pop n
-    @tube.unshift '' if ab and !self.absolute?
-    @tube.replace ['',''] if @tube==['']
-    self
-  end
-
-  def short n
-    self.clone.short! n
-  end
 end
+
+
 
