@@ -73,5 +73,24 @@ class B::Path < String
     end
   end
 
+  #
+  # Method Pass through
+  #
+
+  def method_missing sym, *args
+    if File.respond_to? sym
+      File.public_send sym, self, *args
+    else
+      super
+    end
+  end
+  def respond_to_missing? sym, include_private
+    if File.respond_to? sym
+      true
+    else
+      super
+    end
+  end
+
 end
 
