@@ -6,10 +6,13 @@ require_relative 'b.path.rb'
 module B
 end
 
-class B::Item
+class B::Option
+end
+
+class B::Option::Item
   attr_reader :key
   attr_reader :type
-  attr_reader :short # single letter alias for the key
+  attr_reader :short # single letter alias
   attr_reader :is_plural
   attr_reader :checker
   attr_reader :default
@@ -179,7 +182,7 @@ end
 #- - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #
 
-class B::Property
+class B::Option
   attr_reader :bare
 
   def initialize key_type_hash={ }
@@ -188,6 +191,9 @@ class B::Property
     @shorthash = { } # :shortkey => Item
     for k,t in key_type_hash
       self.add key:k, type:t
+    end
+    unless @contents.key? :help
+      self.add key: :help, type: B::Boolean
     end
   end
 
@@ -205,7 +211,7 @@ class B::Property
     if @contents.key? key
       raise "Key duplicated `#{key}`"
     end
-    item = B::Item.new(
+    item = Item.new(
       key:         key,
       type:        type,
       short:       short,
@@ -305,6 +311,10 @@ class B::Property
       end
     end
     @bare.concat bare if bare
+
+    if self[:help]
+      self.show_help_and_exit
+    end
   end
 
   def fetch_short s
@@ -392,13 +402,13 @@ class B::Property
   end
 
   def show_help_and_exit o=STDOUT, indent:2
-    o.puts O.help indent:indent
+    o.puts self.help indent:indent
     o.puts
     Kernel.exit
   end
 
   def help indent:2
-    matrix = @contents.select{|k,v|v.type}.map do |k,v|
+    matrix = @contents.select{_2.type}.map do |k,v|
       [
         "--#{k}#{v.is_plural ? '*' : ''}",
         (v.short ? "-#{v.short}" : ""),
