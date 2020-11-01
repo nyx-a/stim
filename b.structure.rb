@@ -23,23 +23,27 @@ class B::Structure
 
   def to_hash k:'to_s', v:'itself'
     instance_variables.map do |n|
-      [
-        n[1..].send(k),
-        instance_variable_get(n)&.send(v),
-      ]
+      value = instance_variable_get n
+      if value.kind_of? B::Structure
+        value = value.to_hash k:k, v:v
+      end
+      [n[1..].public_send(k), value&.public_send(v)]
     end.to_h
   end
 
-  def inspect indent:1
-    longest = instance_variables.map(&:size).max - 1
+  INDENT = 2
+
+  def inspect indent:INDENT
     lines = instance_variables.map do |n|
-      "#{' ' * indent}%-*s = %s" % [
-        longest,
-        n[1..],
-        instance_variable_get(n).inspect,
-      ]
+      value = instance_variable_get n
+      str = if value.kind_of? B::Structure
+              value.inspect(indent: indent + INDENT)
+            else
+              value.inspect
+            end
+      "#{' ' * indent}%s = %s" % [n[1..], str]
     end.join "\n"
-    "#{self.class.name} {\n#{lines}\n}"
+    "<<#{self.class.name}>>\n#{lines}"
   end
 end
 
