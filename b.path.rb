@@ -26,6 +26,7 @@ class B::Path < String
   def initialize p, base:'.', confirm:'exist'
     replace File.expand_path p, base
     raise_unless confirm if confirm
+    self.tail! if [confirm].flatten.any? %r/directory/
   end
 
   def +(...)
@@ -41,16 +42,20 @@ class B::Path < String
   #
 
   def tail
-    sub %r`#{File::SEPARATOR}*$`, File::SEPARATOR
+    self.class.allocate.replace(
+      sub %r`#{File::SEPARATOR}*$`, File::SEPARATOR
+    )
   end
   def tail!
-    replace tail
+    self.replace tail
   end
   def untail
-    sub %r`#{File::SEPARATOR}+$`, ''
+    self.class.allocate.replace(
+      sub %r`#{File::SEPARATOR}+$`, ''
+    )
   end
   def untail!
-    replace untail
+    self.replace untail
   end
 
   #
@@ -77,9 +82,9 @@ class B::Path < String
   # Method Pass through
   #
 
-  def method_missing sym, *args
+  def method_missing sym, *args, &block
     if File.respond_to? sym
-      File.public_send sym, self, *args
+      File.send sym, self, *args, &block
     else
       super
     end
@@ -93,4 +98,17 @@ class B::Path < String
   end
 
 end
+
+#
+# XDG Base Directory Support
+#
+
+B::Path::Config = [
+  ENV['XDG_CONFIG_HOME'],
+  "#{ENV['HOME']}/.config",
+  ENV['XDG_CONFIG_DIRS']&.split(':'),
+  '/etc/xdg',
+].flatten.map do
+  B::Path.new _1, confirm:%i(directory executable) rescue nil
+end.compact
 
