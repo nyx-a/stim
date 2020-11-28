@@ -15,15 +15,15 @@ class B::Enum
   end
 
   def value
-    @value.clone
+    @value
   end
 
   def set! v
     p = self.class.const_get :POSSIBLE
     if p.any?{ _1 == v }
-      @value = v
+      @value = v.clone.freeze
     else
-      raise TypeError, "Invalid key `#{v}` for enum #{p}"
+      raise KeyError, "Invalid key `#{v}` for enum #{p}"
     end
     return self
   end
@@ -31,7 +31,9 @@ class B::Enum
   def == other
     @value == other
   end
-  alias :=== :==
+  def === other
+    @value === other
+  end
 
   def inspect
     body = self.class.const_get(:POSSIBLE).map do |x|
