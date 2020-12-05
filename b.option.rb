@@ -13,7 +13,6 @@ class B::Option::Item
   attr_reader :key
   attr_reader :type
   attr_reader :short # single letter alias
-  attr_reader :is_plural
   attr_reader :checker
   attr_reader :default
   attr_reader :value
@@ -37,15 +36,6 @@ class B::Option::Item
       end
     end
     @short = s&.to_sym
-  end
-
-  def is_plural= p
-    case
-    when true,false,nil
-      @is_plural = p
-    else
-      raise "(#{@key}) is_plural mustbe true/false `#{p}`"
-    end
   end
 
   def checker= c
@@ -96,7 +86,7 @@ class B::Option::Item
         ].join(' ')
       end
     end
-    return @is_plural ? [nv] : nv
+    return nv
   end
 
   def value= v
@@ -109,19 +99,6 @@ class B::Option::Item
 
   def description= d
     @description = d&.to_s
-  end
-
-  def << v
-    nv = self.normalize v
-    if @value.nil?
-      @value = nv
-    else
-      if @is_plural
-        @value.concat nv
-      else
-        raise "Crowding values for `#{@key}`"
-      end
-    end
   end
 
   def flip!
@@ -144,15 +121,10 @@ class B::Option::Item
     end
   end
 
-  def multiply!
-    @value = @value.nil? ? [ ] : [@value].flatten
-  end
-
   def initialize(
     key:         nil,
     type:        nil,
     short:       nil,
-    is_plural:   nil,
     checker:     nil,
     default:     nil,
     value:       nil,
@@ -161,7 +133,6 @@ class B::Option::Item
     self.key         = key
     self.type        = type
     self.short       = short
-    self.is_plural   = is_plural
     self.checker     = checker
     self.default     = default
     self.value       = value
@@ -201,7 +172,6 @@ class B::Option
     key:,
     type:        nil,
     short:       nil,
-    is_plural:   nil,
     checker:     nil,
     default:     nil,
     value:       nil,
@@ -215,7 +185,6 @@ class B::Option
       key:         key,
       type:        type,
       short:       short,
-      is_plural:   is_plural,
       checker:     checker,
       default:     default,
       value:       value,
@@ -243,15 +212,6 @@ class B::Option
       i = fetch k
       i.short = s
       @shorthash[s] = i
-    end
-  end
-
-  def multiply *keys
-    for k in keys.flatten
-      k = k.to_sym
-      i = fetch k
-      i.is_plural = true
-      i.multiply!
     end
   end
 
@@ -294,7 +254,7 @@ class B::Option
           if second.nil?
             raise "No params for Non-Boolean-Item `#{ll}`"
           end
-          fetch_short(ll) << second
+          fetch_short(ll).value = second
         end
         for b in letters
           fetch_short(b).flip!
@@ -304,7 +264,7 @@ class B::Option
         if second.nil?
           fetch(op).flip!
         else
-          fetch(op) << second
+          fetch(op).value = second
         end
       else
         @bare.push first
@@ -401,6 +361,10 @@ class B::Option
     end
   end
 
+  def each(...)
+    self.to_hash.each(...)
+  end
+
   def show_help_and_exit o=STDOUT, indent:2
     o.puts self.help indent:indent
     o.puts
@@ -410,7 +374,7 @@ class B::Option
   def help indent:2
     matrix = @contents.select{_2.type}.map do |k,v|
       [
-        "--#{k}#{v.is_plural ? '*' : ''}",
+        "--#{k}",
         (v.short ? "-#{v.short}" : ""),
         v.type.name.split('::').last,
         v.projection,
@@ -429,7 +393,7 @@ class B::Option
   def inspect
     matrix = @contents.map do |k,v|
       [
-        "#{k}#{v.is_plural ? '*' : ''}",
+        k,
         v.short,
         v.type&.name&.split('::')&.last,
         v.value&.inspect,
