@@ -1,7 +1,5 @@
 
-require 'yaml'
-require_relative 'b.boolean.rb'
-require_relative 'b.path.rb'
+require_relative 'b.structure.rb'
 
 module B
 end
@@ -9,413 +7,255 @@ end
 class B::Option
 end
 
-class B::Option::Item
-  attr_reader :key
-  attr_reader :type
-  attr_reader :short # single letter alias
-  attr_reader :checker
-  attr_reader :default
-  attr_reader :value
-  attr_reader :description
+class B::Option::Property < B::Structure
+  attr_reader :long        # String
+  attr_reader :short       # String ( single letter )
+  attr_reader :description # String
+  attr_reader :boolean     # true / false
+  attr_reader :essential   # true / false
+  attr_reader :normalizer  # any object that has a call() method
 
-  def key= k
-    @key = k&.to_sym
+  def long= o
+    @long = o.to_s
   end
 
-  def type= t
-    if t != nil and t.class != Class
-      raise "(#{@key}) Not a class `#{t}`"
+  def short= o
+    if o.length != 1
+      raise "#{@long}: Mustbe a single letter `#{o}`"
     end
-    @type = t
-  end
-
-  def short= s
-    unless s.nil?
-      if s.length != 1
-        raise "(#{@key}) Short alias mustbe 1 letter `#{s}`"
-      end
+    if o =~ /[0-9]/
+      raise "#{@long}: Numbers cannot be used for short option `#{o}`"
     end
-    @short = s&.to_sym
+    @short = o.to_s
   end
 
-  def checker= c
-    unless c.nil? or c.respond_to? :===
-      raise [
-        "(#{@key}) Checker object",
-        "does not have a '===' method",
-        "`#{c.inspect}`",
-      ].join(' ')
+  def boolean= o
+    unless o==true or o==false
+      raise "#{@long}: boolean must be a true or false"
     end
-    @checker = c
+    @boolean = o
   end
 
-  def normalize v
-    nv = if v.nil?
-           nil
-         elsif @type == v.class
-           v.clone
-         elsif @type == Integer
-           if v !~ /\d/
-             raise ArgumentError,
-               "doesn't look like a Integer `#{v}`"
-           end
-           v.to_i
-         elsif @type == Float
-           if v !~ /\d/
-             raise ArgumentError,
-               "doesn't look like a Float `#{v}`"
-           end
-           v.to_f
-         elsif @type == Symbol
-           v.to_sym
-         elsif @type == Regexp
-           Regexp.new v
-         elsif @type == B::Boolean
-           B::Boolean.new v
-         elsif @type == B::Path
-           B::Path.new v
-         else
-           v.clone
-         end
-    unless @checker.nil?
-      unless @checker === nv
-        raise ArgumentError, [
-          "[#{@key}] Rejected by checker",
-          @checker.inspect,
-          "`#{nv.inspect}`",
-        ].join(' ')
-      end
-    end
-    return nv
-  end
-
-  def value= v
-    @value = self.normalize v
-  end
-
-  def default= v
-    @default = self.normalize v
-  end
-
-  def description= d
-    @description = d&.to_s
-  end
-
-  def flip!
-    if @type == B::Boolean
-      if self.projection
-        if @value.nil?
-          @value = B::Boolean.new false
-        else
-          @value.toggle!
-        end
+  def normalizer= o
+    if o.is_a? Symbol or o.is_a? String
+      if B::Option::Normalizer.respond_to? o
+        @normalizer = B::Option::Normalizer.method o
       else
-        if @value.nil?
-          @value = B::Boolean.new true
-        else
-          @value.toggle!
-        end
+        raise "#{@long}: invalid built-in normalizer #{o}"
       end
     else
-      raise "Non-Boolean-Item cannot be flipped `#{@key}`"
+      if o.respond_to? :call
+        @normalizer = o
+      else
+        raise "#{@long}: normalizer must have a call() method"
+      end
     end
   end
 
-  def initialize(
-    key:         nil,
-    type:        nil,
-    short:       nil,
-    checker:     nil,
-    default:     nil,
-    value:       nil,
-    description: nil
-  )
-    self.key         = key
-    self.type        = type
-    self.short       = short
-    self.checker     = checker
-    self.default     = default
-    self.value       = value
-    self.description = description
-
-    if @type == B::Boolean and @default.nil?
-      self.default = false
+  def essential= o
+    unless o==true or o==false
+      raise "#{@long}: essential must be a true or false"
     end
+    @essential = o
   end
 
-  def projection
-    p = @value || @default
-    p.is_a?(B::Boolean) ? p.to_b : p
+  def description= o
+    @description = o.to_s
+  end
+
+  def hash
+    @long.hash
   end
 end
 
-#
-#- - - - - - - - - - - - - - - - - - - - - - - - - - - -
-#
+#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 class B::Option
-  attr_reader :bare
 
-  def initialize key_type_hash={ }
-    @bare      = [ ]
-    @contents  = { } # :longkey  => Item
-    @shorthash = { } # :shortkey => Item
-    for k,t in key_type_hash
-      self.add key:k, type:t
+  # h is { long => description }
+  def initialize **h
+    @bare   = [ ]
+    @long   = { } # "long"   => Property
+    @short  = { } # "short"  => Property
+    @buffer = { } # Property => "buffer"
+    @value  = nil # Property => value
+    for l,d in h
+      register_long Property.new long:l, description:d
     end
-    unless @contents.key? :help
-      self.add key: :help, type: B::Boolean
+    unless @long.key? 'help'
+      register_long Property.new(
+        long:    'help',
+        boolean: true,
+      )
     end
   end
 
-  def add(
-    key:,
-    type:        nil,
-    short:       nil,
-    checker:     nil,
-    default:     nil,
-    value:       nil,
-    description: nil
-  )
-    key = key.to_sym
-    if @contents.key? key
-      raise "Key duplicated `#{key}`"
-    end
-    item = Item.new(
-      key:         key,
-      type:        type,
-      short:       short,
-      checker:     checker,
-      default:     default,
-      value:       value,
-      description: description
-    )
-    @contents[key] = item
-    if item.short
-      if @shorthash.key? item.short
-        raise "The short option is duplicated `#{item.short}`"
-      else
-        @shorthash[item.short] = item
-      end
-    end
+  def register_long p
+    raise "long key is nil" if p.long.nil?
+    raise "long key `#{p.long}` duplicated" if @long.key? p.long
+    @long[p.long] = p
   end
 
-  def list_add *seq
-    for i in seq.flatten
-      self.add(**i)
-    end
+  def register_short p
+    raise "short key is nil" if p.short.nil?
+    raise "short key `#{p.short}` duplicated" if @short.key? p.short
+    @short[p.short] = p
   end
 
-  def short key_short_hash
-    for k,s in key_short_hash
-      s = s.to_sym
-      i = fetch k
-      i.short = s
-      @shorthash[s] = i
-    end
-  end
-
-  def default key_default_hash
-    for k,d in key_default_hash
-      fetch(k).default = d
-    end
-  end
-
-  def checker key_checker_hash
-    for k,c in key_checker_hash
-      fetch(k).checker = c
-    end
-  end
-
-  def description key_text_hash
-    for k,t in key_text_hash
-      fetch(k).description = t
-    end
-  end
-
-  def parse array
-    @bare.clear
-    eoo = array.index '--' # end of options
-    if eoo
-      bare  = array[ eoo+1 .. -1    ]
-      array = array[ 0     .. eoo-1 ]
-    end
-    re = /^-{1,2}(?=[^-])/
-    for c in array.chunk_while{ |l,r| l =~ re and r !~ re }
-      first  = c[0]
-      second = c[1]
-      case first
-      when /^-{1}(?=[^-])/ # short
-        letters = $~.post_match.chars
-        if fetch_short(letters.last).type == B::Boolean
-          @bare.push second if second
-        else
-          ll = letters.pop # last letter
-          if second.nil?
-            raise "No params for Non-Boolean-Item `#{ll}`"
-          end
-          fetch_short(ll).value = second
-        end
-        for b in letters
-          fetch_short(b).flip!
-        end
-      when /^-{2}(?=[^-])/ # long
-        op = $~.post_match
-        if second.nil?
-          fetch(op).flip!
-        else
-          fetch(op).value = second
-        end
-      else
-        @bare.push first
-      end
-    end
-    @bare.concat bare if bare
-
-    if self[:help]
-      self.show_help_and_exit
-    end
+  def fetch_long l
+    @long[l.to_s] or raise "invalid long option --#{l}"
   end
 
   def fetch_short s
-    raise KeyError, "nil was given for key" if s.nil?
-    s = s.to_sym
-    unless @shorthash.key? s
-      raise KeyError, "Unknown short key `#{s}`"
+    @short[s.to_s] or raise "invalid short option -#{s}"
+  end
+
+  def [] l
+    if @value.nil?
+      raise "#{self.class} is not available until the make() is called"
     end
-    @shorthash[s]
+    @value[fetch_long l]
   end
 
-  def fetch k
-    raise KeyError, "nil was given for key" if k.nil?
-    k = k.to_sym
-    unless @contents.key? k
-      raise KeyError, "Unknown key `#{k}`"
-    end
-    @contents[k]
-  end
-
-  def fetch! k
-    raise KeyError, "nil was given for key" if k.nil?
-    k = k.to_sym
-    @contents[k] or (@contents[k] = Item.new(key:k))
-  end
-
-  def [] k
-    fetch(k).projection
-  end
-
-  def []= k, v
-    fetch!(k).value = v
-  end
-
-  def raise_if_blank *keys
-    keys = keys.flatten
-    keys = @contents.keys if keys.empty?
-    blankkeys = keys.select{ |k| self[k.to_sym].nil? }
-    unless blankkeys.empty?
-      raise ArgumentError, [
-        "These keys cannot be omitted",
-        "#{blankkeys.inspect}",
-      ].join(' ')
+  def short **hsh # { long => short }
+    hsh.each do
+      p = fetch_long _1
+      p.short = _2
+      register_short p
     end
   end
 
-  def underlay hash
-    for k,v in hash
-      fetch(k).value ||= v
+  def boolean *arr # [ long ]
+    arr.each{ fetch_long(_1).boolean = true }
+  end
+
+  def normalizer **hsh # { long => normalizer }
+    hsh.each{ fetch_long(_1).normalizer = _2 }
+  end
+
+  def essential *arr # [ long ]
+    arr.each{ fetch_long(_1).essential = true }
+  end
+
+  def default **hsh # { long => "default" }
+    hsh.each{ @buffer[fetch_long _1] = _2 }
+  end
+
+  def parse argv
+    @bare.clear
+    eoo = argv.index '--' # end of options
+    if eoo
+      tail = argv[eoo+1 ..      ]
+      argv = argv[      .. eoo-1]
+    end
+
+    re = /^-{1,2}(?=[^-])/
+    for first,second in argv.chunk_while{ _1 =~ re and _2 !~ re }
+      case first
+      when /^--(?i:no)-(?=[^-])/
+        # --no-long
+        p = fetch_long $~.post_match
+        raise "#{p.long} is not boolean" unless p.boolean
+        @buffer[p] = false
+        @bare.push second if second
+      when /^--(?=[^-])/
+        # --long
+        p = fetch_long $~.post_match
+        if p.boolean
+          @buffer[p] = true
+          @bare.push second if second
+        else
+          @buffer[p] = second || ''
+        end
+      when /^-(?=[^-])(?!.*[0-9])/
+        # -short
+        b,o = $~.post_match.chars.map{ fetch_short _1 }.partition(&:boolean)
+        b.each{ @buffer[_1] = true }
+        @buffer[o.pop] = second if second && !o.empty?
+        o.each{ @buffer[_1] = '' }
+      else
+        # bare
+        @bare.push first
+      end
+    end
+    @bare.concat tail if tail
+  end
+
+  def make toml_file_path=nil
+    @value = { } # <-- here
+    parse ARGV
+    for p in @long.values.filter{ @buffer.key? _1 }
+      begin
+        # If the normalizer returns nil,
+        # the original string will be used as is.
+        # ( Verification only, no conversion. )
+        @value[p] = p.normalizer&.call(@buffer[p]) || @buffer[p]
+      rescue Exception => e
+        raise %Q`verification failed --#{p.long} "#{@buffer[p]}" #{e.message}`
+      end
+    end
+    for p in @long.values.filter{ _1.essential }
+      if @value[p].nil? or @value[p].empty?
+        raise "cannot be omitted --#{p.long}"
+      end
+    end
+    if self[:help]
+      puts "Options:"
+      puts help.gsub(/^/, '  ')
+      puts
+      exit
     end
   end
 
-  def yaml_underlay fname
-    begin
-      underlay YAML.load_file fname.to_s
-    rescue => e
-      raise "`#{e}` in file #{fname}"
-    end
+  def make!(...)
+    make(...)
+    ARGV.clear
   end
 
-  def overlay hash
-    for k,v in hash
-      fetch(k).value = v
-    end
-  end
-
-  def yaml_overlay fname
-    begin
-      overlay YAML.load_file fname.to_s
-    rescue => e
-      raise "#{e} in file `#{fname}`"
-    end
-  end
-
-  def slice *keys
-    @contents.slice(*keys.flatten.map(&:to_sym)).to_h do |k,v|
-      [ k, v.projection ]
-    end.compact
-  end
-
-  def to_hash
-    @contents.to_h do |k,v|
-      [ k, v.projection ]
-    end
-  end
-
-  def each(...)
-    self.to_hash.each(...)
-  end
-
-  def show_help_and_exit o=STDOUT, indent:2
-    o.puts self.help indent:indent
-    o.puts
-    Kernel.exit
-  end
-
-  def help indent:2
-    matrix = @contents.select{_2.type}.map do |k,v|
+  def help
+    matrix = @long.values.map do |p|
       [
-        "--#{k}",
-        (v.short ? "-#{v.short}" : ""),
-        v.type.name.split('::').last,
-        v.projection,
-        v.description,
+        (p.essential ? '!' : ''),
+        (p.short ? "-#{p.short}" : ''),
+        "--#{p.long}",
+        (p.boolean ? 'T/F' : ''),
+        p.description,
+        @value[p].inspect,
       ]
     end
-    longest = matrix.transpose.map do |column|
-      column.map(&:to_s).map(&:size).max
-    end
+    longest = matrix.transpose.map{ _1.map(&:to_s).map(&:size).max }
     matrix.map do |row|
-      "#{' ' * indent}%-*s %*s %-*s ( %-*s ) %-*s" %
-        longest.zip(row).flatten
+      "%-*s %-*s %-*s %-*s .. %-*s" % longest.zip(row).flatten
     end.join "\n"
   end
 
   def inspect
-    matrix = @contents.map do |k,v|
-      [
-        k,
-        v.short,
-        v.type&.name&.split('::')&.last,
-        v.value&.inspect,
-        v.default&.inspect,
-        v.checker&.inspect,
-        v.description&.to_s,
-      ]
+    a = @long.map do |l,p|
+      "--#{l} #{@value&.[](p).inspect} <- #{@buffer[p].inspect}"
     end
-    matrix.unshift %w(Key K Type Value Default Chk Desc)
-    longest = matrix.transpose.map do |column|
-      column.map(&:to_s).map(&:size).max
+    a.push "  bare #{@bare.inspect}"
+    a.join "\n"
+  end
+end
+
+#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# built-in normalizers
+
+module B::Option::Normalizer
+  module_function
+
+  def to_integer s
+    if s !~ /^[+-]?\d+$/
+      raise "doesn't look like a Integer"
     end
-    aos = matrix.map do |row|
-      "|%-*s|%*s|%-*s|%-*s|%-*s|%-*s|%-*s|" %
-        longest.zip(row).flatten
+    s.to_i
+  end
+
+  def to_float s
+    if s !~ /^[+-]?\d+(?:\.\d+)?$/
+      raise "doesn't look like a Float"
     end
-    bar = "+%s+%s+%s+%s+%s+%s+%s+" % longest.map{|l| '-' * l}
-    aos.insert(-1, bar)
-    aos.insert( 1, bar)
-    aos.insert( 0, bar)
-    aos.push "Bare:#{@bare.inspect}"
-    aos.join "\n"
+    s.to_f
   end
 end
 
