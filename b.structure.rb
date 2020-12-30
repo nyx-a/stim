@@ -52,13 +52,14 @@ class B::Structure
     return c
   end
 
-  def mask *hide
+  def except *hide
     c = self.clone
     for x in self.keys & hide.flatten.map(&:to_sym)
       c.instance_variable_set "@#{x}", nil
     end
     return c
   end
+  alias :mask :except
 
   def to_a k:'to_sym', v:'itself', recur:false
     instance_variables.map do |n|
@@ -75,28 +76,17 @@ class B::Structure
   end
   alias :map :each
 
-  # It's __method__, not __callee__.
-  # Cause Array doesn't have to_hash method.
   def to_h k:'to_sym', v:'itself', recur:true, &b
     to_a(k:k,v:v,recur:recur).send(__method__, &b)
   end
   alias :to_hash :to_h
 
-  #
-  # inspector
-  #
-
-  INDENT = 2
-
-  def inspect indent:INDENT
-    "<<#{self.class.name}>>\n" + self.map do |k,v|
-      i = if v.is_a? B::Structure
-            v.inspect(indent: indent + INDENT)
-          else
-            v.inspect
-          end
-      "#{' ' * indent}#{k} = #{i}"
-    end.join("\n")
+  def inspect indent:2
+    stuff = self.map do |k,v|
+      i = v.is_a?(B::Structure) ? v.inspect(indent:indent) : v.inspect
+      "#{k} = #{i}"
+    end.join("\n").gsub(/^/, ' '*indent)
+    "<#{self.class.name}>\n#{stuff}"
   end
 
 end
