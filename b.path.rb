@@ -62,17 +62,18 @@ class B::Path < String
   # File Test
   #
 
-  def nand *menu
-    menu.flatten.reject{ File.public_send "#{_1}?", self }
+  # Converse Non-Implication (other - self)
+  def cni *other
+    other.flatten.reject{ File.public_send "#{_1}?", self }
   end
   def confirm(...)
-    nand(...).empty?
+    cni(...).empty?
   end
   def aint(...)
     not confirm(...)
   end
   def raise_unless(...)
-    n = nand(...)
+    n = cni(...)
     unless n.empty?
       raise "#{self.class}(#{self}) is not #{n.join(',')}"
     end
@@ -112,3 +113,10 @@ B::Path::Config = [
   B::Path.new _1, confirm:%i(directory executable) rescue nil
 end.compact
 
+class B::Path
+  def self.find_first_config fname
+    order = [ B::Path.new(fname, confirm:nil) ]
+    order.concat B::Path::Config.map{ _1 + fname }
+    order.find{ _1.confirm :exist }
+  end
+end
