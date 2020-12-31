@@ -1,4 +1,5 @@
 
+require 'toml'
 require_relative 'b.structure.rb'
 
 module B
@@ -8,12 +9,13 @@ class B::Option
 end
 
 class B::Option::Property < B::Structure
-  attr_reader :long        # String
-  attr_reader :short       # String ( single letter )
-  attr_reader :description # String
-  attr_reader :boolean     # true / false
-  attr_reader :essential   # true / false
-  attr_reader :normalizer  # any object that has a call() method
+  attr_reader   :long        # String
+  attr_reader   :short       # String ( single letter )
+  attr_reader   :description # String
+  attr_reader   :boolean     # true / false
+  attr_reader   :essential   # true / false
+  attr_reader   :normalizer  # any object that has a call() method
+  attr_accessor :default     # anything
 
   def long= o
     @long = o.to_s
@@ -38,17 +40,15 @@ class B::Option::Property < B::Structure
 
   def normalizer= o
     if o.is_a? Symbol or o.is_a? String
-      if B::Option::Normalizer.respond_to? o
-        @normalizer = B::Option::Normalizer.method o
-      else
+      unless B::Option::Normalizer.respond_to? o
         raise "#{@long}: invalid built-in normalizer #{o}"
       end
+      @normalizer = B::Option::Normalizer.method o
     else
-      if o.respond_to? :call
-        @normalizer = o
-      else
+      unless o.respond_to? :call
         raise "#{@long}: normalizer must have a call() method"
       end
+      @normalizer = o
     end
   end
 
@@ -66,81 +66,93 @@ class B::Option::Property < B::Structure
   def hash
     @long.hash
   end
+
+  def == other
+    self.hash == other.hash
+  end
 end
 
 #- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 class B::Option
 
-  # h is { long => description }
-  def initialize **h
-    @bare   = [ ]
-    @long   = { } # "long"   => Property
-    @short  = { } # "short"  => Property
-    @buffer = { } # Property => "buffer"
-    @value  = nil # Property => value
-    for l,d in h
-      register_long Property.new long:l, description:d
-    end
-    unless @long.key? 'help'
-      register_long Property.new(
+  def initialize **hsh # { long => description }
+    @bare     = [ ]
+    @property = [ ] # Property
+    @buffer   = { } # Property => "buffer"
+    @value    = nil # Property => value
+    hsh.each{ register Property.new long:_1, description:_2 }
+    if find_l('help').nil?
+      register Property.new(
         long:    'help',
         boolean: true,
       )
     end
   end
 
-  def register_long p
-    raise "long key is nil" if p.long.nil?
-    raise "long key `#{p.long}` duplicated" if @long.key? p.long
-    @long[p.long] = p
+  def register *arr
+    for p in arr.flatten
+      raise "long key cannot be omitted" if p.long.nil?
+      raise "long key `#{p.long}` duplicated" if find_l p.long
+      raise "short key `#{p.short}` duplicated" if find_s p.short
+      @property.push p
+    end
   end
 
-  def register_short p
-    raise "short key is nil" if p.short.nil?
-    raise "short key `#{p.short}` duplicated" if @short.key? p.short
-    @short[p.short] = p
+  def find_l str
+    str = str.to_s
+    @property.find{ _1.long == str }
+  end
+  private :find_l
+
+  def find_s str
+    str = str.to_s
+    @property.find{ _1.short == str }
+  end
+  private :find_s
+
+  def plong str
+    find_l(str) or raise "invalid long option --#{str}"
   end
 
-  def fetch_long l
-    @long[l.to_s] or raise "invalid long option --#{l}"
-  end
-
-  def fetch_short s
-    @short[s.to_s] or raise "invalid short option -#{s}"
+  def pshort str
+    find_s(str) or raise "invalid short option -#{str}"
   end
 
   def [] l
     if @value.nil?
       raise "#{self.class} is not available until the make() is called"
     end
-    @value[fetch_long l]
+    @value[plong l]
   end
 
   def short **hsh # { long => short }
     hsh.each do
-      p = fetch_long _1
+      p = plong _1
+      if p.short
+        raise "The key #{p.long}(#{p.short}) has already been set"
+      end
       p.short = _2
-      register_short p
     end
   end
 
   def boolean *arr # [ long ]
-    arr.each{ fetch_long(_1).boolean = true }
-  end
-
-  def normalizer **hsh # { long => normalizer }
-    hsh.each{ fetch_long(_1).normalizer = _2 }
+    arr.each{ plong(_1).boolean = true }
   end
 
   def essential *arr # [ long ]
-    arr.each{ fetch_long(_1).essential = true }
+    arr.each{ plong(_1).essential = true }
   end
 
-  def default **hsh # { long => "default" }
-    hsh.each{ @buffer[fetch_long _1] = _2 }
+  def normalizer **hsh # { long => normalizer }
+    hsh.each{ plong(_1).normalizer = _2 }
   end
 
+  def default **hsh # { long => default }
+    hsh.each{ plong(_1).default = _2 }
+  end
+
+  # parse() raises an exception if there is an unknown key.
   def parse argv
     @bare.clear
     eoo = argv.index '--' # end of options
@@ -148,31 +160,31 @@ class B::Option
       tail = argv[eoo+1 ..      ]
       argv = argv[      .. eoo-1]
     end
-
     re = /^-{1,2}(?=[^-])/
     for first,second in argv.chunk_while{ _1 =~ re and _2 !~ re }
       case first
       when /^--(?i:no)-(?=[^-])/
         # --no-long
-        p = fetch_long $~.post_match
+        p = plong $~.post_match
         raise "#{p.long} is not boolean" unless p.boolean
         @buffer[p] = false
         @bare.push second if second
       when /^--(?=[^-])/
         # --long
-        p = fetch_long $~.post_match
+        p = plong $~.post_match
         if p.boolean
           @buffer[p] = true
           @bare.push second if second
         else
-          @buffer[p] = second || ''
+          @buffer[p] = second
         end
       when /^-(?=[^-])(?!.*[0-9])/
         # -short
-        b,o = $~.post_match.chars.map{ fetch_short _1 }.partition(&:boolean)
+        letters = $~.post_match.chars
+        b,o = letters.map{ pshort _1 }.partition &:boolean
         b.each{ @buffer[_1] = true }
         @buffer[o.pop] = second if second && !o.empty?
-        o.each{ @buffer[_1] = '' }
+        o.each{ @buffer[_1] = nil }
       else
         # bare
         @bare.push first
@@ -181,23 +193,32 @@ class B::Option
     @bare.concat tail if tail
   end
 
-  def make toml_file_path=nil
+  # gate() will ignore any unknown keys.
+  def gate other
+    for k,v in dot_notation(other).slice @property.map(&:long)
+      @buffer[plong k] = v
+    end
+  end
+
+  def make toml_path=nil
     @value = { } # <-- here
+    gate TOML.load_file toml_path if toml_path
     parse ARGV
-    for p in @long.values.filter{ @buffer.key? _1 }
+    for p in @property
+      bff = @buffer[p] || p.default
+      next if !bff
       begin
         # If the normalizer returns nil,
         # the original string will be used as is.
         # ( Verification only, no conversion. )
-        @value[p] = p.normalizer&.call(@buffer[p]) || @buffer[p]
+        @value[p] = p.normalizer&.call(bff) || bff
       rescue Exception => e
-        raise %Q`verification failed --#{p.long} "#{@buffer[p]}" #{e.message}`
+        raise %Q`verification failed --#{p.long} "#{bff}" #{e.message}`
       end
     end
-    for p in @long.values.filter{ _1.essential }
-      if @value[p].nil? or @value[p].empty?
-        raise "cannot be omitted --#{p.long}"
-      end
+    blank = @property.select{ _1.essential and @value[_1].nil? }
+    unless blank.empty?
+      raise "cannot be omitted #{blank.map(&:long).join(',')}"
     end
     if self[:help]
       puts "Options:"
@@ -213,29 +234,48 @@ class B::Option
   end
 
   def help
-    matrix = @long.values.map do |p|
+    matrix = @property.map do |p|
       [
         (p.essential ? '!' : ''),
         (p.short ? "-#{p.short}" : ''),
         "--#{p.long}",
-        (p.boolean ? 'T/F' : ''),
+        (p.boolean ? '(T/F)' : ''),
         p.description,
         @value[p].inspect,
       ]
     end
     longest = matrix.transpose.map{ _1.map(&:to_s).map(&:size).max }
     matrix.map do |row|
-      "%-*s %-*s %-*s %-*s .. %-*s" % longest.zip(row).flatten
+      "%-*s %-*s %-*s %-*s %-*s" % longest.zip(row).flatten
     end.join "\n"
   end
 
   def inspect
-    a = @long.map do |l,p|
-      "--#{l} #{@value&.[](p).inspect} <- #{@buffer[p].inspect}"
+    a = @property.map do |p|
+      "--#{p.long} #{@value&.[](p).inspect} <- #{@buffer[p].inspect}"
     end
     a.push "  bare #{@bare.inspect}"
+    if @value.nil?
+      a.push "This instance isn't available until the make() is called."
+    end
     a.join "\n"
   end
+
+  # Flatten the nested hashes and
+  # change the key to dot notation.
+  def self.dot_notation hash, ancestor=[ ]
+    result = { }
+    for key,value in hash
+      present = ancestor + [key]
+      if value.is_a? Hash and !value.empty?
+        result.merge! dot_notation value, present
+      else
+        result.merge! present.join('.') => value
+      end
+    end
+    result
+  end
+  private_class_method :dot_notation
 end
 
 #- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -245,16 +285,16 @@ module B::Option::Normalizer
   module_function
 
   def to_integer s
-    if s !~ /^[+-]?\d+$/
-      raise "doesn't look like a Integer"
-    end
+    return nil if s.is_a? Integer
+    raise "Isn't String #{s}(#{s.class})" unless s.is_a? String
+    raise "doesn't look like a Integer" if s !~ /^[+-]?\d+$/
     s.to_i
   end
 
   def to_float s
-    if s !~ /^[+-]?\d+(?:\.\d+)?$/
-      raise "doesn't look like a Float"
-    end
+    return nil if s.is_a? Float
+    raise "Isn't String #{s}(#{s.class})" unless s.is_a? String
+    raise "doesn't look like a Float" if s !~ /^[+-]?\d+(?:\.\d+)?$/
     s.to_f
   end
 end
