@@ -6,26 +6,12 @@ module B
 end
 
 class B::Option
-
   def initialize **hsh # { long => description }
     @bare     = [ ]
     @property = [ ] # Property
     @buffer   = { } # Property => "buffer"
     @value    = nil # Property => value
     hsh.each{ register Property.new long:_1, description:_2 }
-    if find_l('toml').nil?
-      register Property.new(
-        long:        'toml',
-        description: 'TOML file to underlay',
-      )
-    end
-    if find_l(:help).nil?
-      register Property.new(
-        long:        'help',
-        description: 'Show this help',
-        boolean:     true,
-      )
-    end
   end
 
   def register *arr
@@ -131,10 +117,26 @@ class B::Option
     @bare.concat tail if tail
   end
 
-  # gate() will ignore any unknown keys.
-  def gate other
-    for k,v in dot_notation(other).slice @property.map(&:long)
-      @buffer[plong k] = v
+  # Flatten a nested hash and
+  # change the keys to dot notation.
+  def dn_flatten hash, ancestor=[ ]
+    result = { }
+    for key,value in hash
+      present = ancestor + [key]
+      if value.is_a? Hash and !value.empty?
+        result.merge! dn_flatten value, present
+      else
+        result.merge! present.join('.') => value
+      end
+    end
+    result
+  end
+  private :dn_flatten
+
+  # underlay!() will ignore any unknown keys.
+  def underlay! other
+    for k,v in dn_flatten(other).slice(*@property.map(&:long)) #### ??ruby version??
+      @buffer[plong k] ||= v
     end
   end
 
@@ -143,7 +145,7 @@ class B::Option
   # (Verification only, no conversion.)
   def normalize p
     bd = @buffer[p] || p.default
-    return nil if !bd
+    return nil if bd.nil?
     begin
       p.normalizer&.call(bd) || bd
     rescue Exception => e
@@ -154,13 +156,28 @@ class B::Option
 
   def make
     @value = { } # <-- here
-    # underlay TOML
-    config = normalize plong :toml
-    if config
-      gate TOML.load_file config
+
+    if find_l('toml').nil?
+      register Property.new(
+        long:        'toml',
+        description: 'TOML file to underlay',
+      )
     end
+    if find_l(:help).nil?
+      register Property.new(
+        long:        'help',
+        description: 'Show this help',
+        boolean:     true,
+      )
+    end
+
     # overlay command line option
     parse ARGV
+
+    # underlay TOML
+    cfg = normalize plong :toml
+    underlay! TOML.load_file cfg if cfg
+
     # normalize buffer/default
     for p in @property
       @value[p] = normalize p
@@ -182,6 +199,20 @@ class B::Option
     ARGV.clear
   end
 
+  def slice *longkeys
+    filter = longkeys.flatten.map{ plong _1 }
+    @property.intersection(filter).map{ [_1.long, @value[_1]] }.to_h
+  end
+
+  def except *longkeys
+    mask = longkeys.flatten.map{ plong _1 }
+    @property.difference(mask).map{ [_1.long, @value[_1]] }.to_h
+  end
+
+  def bare
+    @bare
+  end
+
   def help
     matrix = @property.map do |p|
       [
@@ -199,7 +230,7 @@ class B::Option
 
   def inspect
     a = @property.map do |p|
-      "--#{p.long} #{@value&.[](p).inspect} <- #{@buffer[p].inspect}"
+      "--#{p.long} #{@value&.[](p).inspect} <- #{(@buffer[p] || p.default).inspect}"
     end
     a.push "  bare #{@bare.inspect}"
     if @value.nil?
@@ -207,22 +238,6 @@ class B::Option
     end
     a.join "\n"
   end
-
-  # Flatten the nested hashes and
-  # change the key to dot notation.
-  def self.dot_notation hash, ancestor=[ ]
-    result = { }
-    for key,value in hash
-      present = ancestor + [key]
-      if value.is_a? Hash and !value.empty?
-        result.merge! dot_notation value, present
-      else
-        result.merge! present.join('.') => value
-      end
-    end
-    result
-  end
-  private_class_method :dot_notation
 end
 
 #- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
