@@ -46,14 +46,17 @@ class B::Path < String
       sub %r`#{File::SEPARATOR}*$`, File::SEPARATOR
     )
   end
+
   def tail!
     self.replace tail
   end
+
   def untail
     self.class.allocate.replace(
       sub %r`#{File::SEPARATOR}+$`, ''
     )
   end
+
   def untail!
     self.replace untail
   end
@@ -66,12 +69,15 @@ class B::Path < String
   def cni *other
     other.flatten.reject{ File.public_send "#{_1}?", self }
   end
+
   def confirm(...)
     cni(...).empty?
   end
+
   def aint(...)
     not confirm(...)
   end
+
   def raise_unless(...)
     n = cni(...)
     unless n.empty?
@@ -90,6 +96,7 @@ class B::Path < String
       super
     end
   end
+
   def respond_to_missing? sym, include_private
     if File.respond_to? sym
       true
@@ -104,19 +111,35 @@ end
 # XDG Base Directory Support
 #
 
-B::Path::Config = [
-  ENV['XDG_CONFIG_HOME'],
-  "#{ENV['HOME']}/.config",
-  ENV['XDG_CONFIG_DIRS']&.split(':'),
-  '/etc/xdg',
+B::Path::XDGConfig = [
+  ENV['XDG_CONFIG_HOME'],             # 1
+  "#{ENV['HOME']}/.config",           # 2
+  ENV['XDG_CONFIG_DIRS']&.split(':'), # 3
+  '/etc/xdg',                         # 4
+].flatten.map do
+  B::Path.new _1, confirm:%i(directory executable) rescue nil
+end.compact
+
+B::Path::XDGCache = [
+  ENV['XDG_CACHE_HOME'],   # 1
+  "#{ENV['HOME']}/.cache", # 2
 ].flatten.map do
   B::Path.new _1, confirm:%i(directory executable) rescue nil
 end.compact
 
 class B::Path
-  def self.find_first_config fname
-    order = [ B::Path.new(fname, confirm:nil) ]
-    order.concat B::Path::Config.map{ _1 + fname }
-    order.find{ _1.confirm :exist }
+  def self.xdgfind kind, fname
+    literal = Object.const_get "B::Path::XDG#{kind.capitalize}"
+    list = literal.map{ _1 + fname }
+    list.unshift B::Path.new fname, confirm:nil
+    list.find{ _1.confirm :exist }
+  end
+
+  def self.xdgvisit kind, fname
+    literal = Object.const_get "B::Path::XDG#{kind.capitalize}"
+    p = literal.first + fname
+    B::Path.dig p.dirname
+    p
   end
 end
+
