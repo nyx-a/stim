@@ -82,10 +82,17 @@ class B::Option
     @buffer   = { } # Property => "buffer"
     @value    = nil # Property => value
     hsh.each{ register Property.new long:_1, description:_2 }
-    if find_l('help').nil?
+    if find_l('toml').nil?
       register Property.new(
-        long:    'help',
-        boolean: true,
+        long:        'toml',
+        description: 'TOML file to underlay',
+      )
+    end
+    if find_l(:help).nil?
+      register Property.new(
+        long:        'help',
+        description: 'Show this help',
+        boolean:     true,
       )
     end
   end
@@ -200,21 +207,32 @@ class B::Option
     end
   end
 
-  def make toml_path=nil
+  # If the normalizer returns nil,
+  # the original string will be used as is.
+  # (Verification only, no conversion.)
+  def normalize p
+    bd = @buffer[p] || p.default
+    return nil if !bd
+    begin
+      p.normalizer&.call(bd) || bd
+    rescue Exception => e
+      raise %Q`verification failed --#{p.long} "#{bd}" #{e.message}`
+    end
+  end
+  private :normalize
+
+  def make
     @value = { } # <-- here
-    gate TOML.load_file toml_path if toml_path
+    # underlay TOML
+    config = normalize plong :toml
+    if config
+      gate TOML.load_file config
+    end
+    # overlay command line option
     parse ARGV
+    # normalize buffer/default
     for p in @property
-      bff = @buffer[p] || p.default
-      next if !bff
-      begin
-        # If the normalizer returns nil,
-        # the original string will be used as is.
-        # ( Verification only, no conversion. )
-        @value[p] = p.normalizer&.call(bff) || bff
-      rescue Exception => e
-        raise %Q`verification failed --#{p.long} "#{bff}" #{e.message}`
-      end
+      @value[p] = normalize p
     end
     blank = @property.select{ _1.essential and @value[_1].nil? }
     unless blank.empty?
@@ -239,14 +257,12 @@ class B::Option
         (p.essential ? '!' : ''),
         (p.short ? "-#{p.short}" : ''),
         "--#{p.long}",
-        (p.boolean ? '(T/F)' : ''),
-        p.description,
-        @value[p].inspect,
+        "#{p.description}#{(p.boolean ? ' (boolean)' : '')}",
       ]
     end
     longest = matrix.transpose.map{ _1.map(&:to_s).map(&:size).max }
     matrix.map do |row|
-      "%-*s %-*s %-*s %-*s %-*s" % longest.zip(row).flatten
+      "%-*s %-*s %-*s %-*s" % longest.zip(row).flatten
     end.join "\n"
   end
 
