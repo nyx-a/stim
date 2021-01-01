@@ -6,75 +6,6 @@ module B
 end
 
 class B::Option
-end
-
-class B::Option::Property < B::Structure
-  attr_reader   :long        # String
-  attr_reader   :short       # String ( single letter )
-  attr_reader   :description # String
-  attr_reader   :boolean     # true / false
-  attr_reader   :essential   # true / false
-  attr_reader   :normalizer  # any object that has a call() method
-  attr_accessor :default     # anything
-
-  def long= o
-    @long = o.to_s
-  end
-
-  def short= o
-    if o.length != 1
-      raise "#{@long}: Mustbe a single letter `#{o}`"
-    end
-    if o =~ /[0-9]/
-      raise "#{@long}: Numbers cannot be used for short option `#{o}`"
-    end
-    @short = o.to_s
-  end
-
-  def boolean= o
-    unless o==true or o==false
-      raise "#{@long}: boolean must be a true or false"
-    end
-    @boolean = o
-  end
-
-  def normalizer= o
-    if o.is_a? Symbol or o.is_a? String
-      unless B::Option::Normalizer.respond_to? o
-        raise "#{@long}: invalid built-in normalizer #{o}"
-      end
-      @normalizer = B::Option::Normalizer.method o
-    else
-      unless o.respond_to? :call
-        raise "#{@long}: normalizer must have a call() method"
-      end
-      @normalizer = o
-    end
-  end
-
-  def essential= o
-    unless o==true or o==false
-      raise "#{@long}: essential must be a true or false"
-    end
-    @essential = o
-  end
-
-  def description= o
-    @description = o.to_s
-  end
-
-  def hash
-    @long.hash
-  end
-
-  def == other
-    self.hash == other.hash
-  end
-end
-
-#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-class B::Option
 
   def initialize **hsh # { long => description }
     @bare     = [ ]
@@ -292,6 +223,73 @@ class B::Option
     result
   end
   private_class_method :dot_notation
+end
+
+#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Option Element
+
+class B::Option::Property < B::Structure
+  attr_reader   :long        # String
+  attr_reader   :short       # String ( single letter )
+  attr_reader   :description # String
+  attr_reader   :boolean     # true / false
+  attr_reader   :essential   # true / false
+  attr_reader   :normalizer  # any object that has a call() method
+  attr_accessor :default     # anything
+
+  def long= o
+    @long = o.to_s
+  end
+
+  def short= o
+    if o.length != 1
+      raise "#{@long}: Mustbe a single letter `#{o}`"
+    end
+    if o =~ /[0-9]/
+      raise "#{@long}: Numbers cannot be used for short option `#{o}`"
+    end
+    @short = o.to_s
+  end
+
+  def boolean= o
+    unless o==true or o==false
+      raise "#{@long}: boolean must be a true or false"
+    end
+    @boolean = o
+  end
+
+  def normalizer= o
+    if o.is_a? Symbol or o.is_a? String
+      unless B::Option::Normalizer.respond_to? o
+        raise "#{@long}: invalid built-in normalizer #{o}"
+      end
+      @normalizer = B::Option::Normalizer.method o
+    else
+      unless o.respond_to? :call
+        raise "#{@long}: normalizer must have a call() method"
+      end
+      @normalizer = o
+    end
+  end
+
+  def essential= o
+    unless o==true or o==false
+      raise "#{@long}: essential must be a true or false"
+    end
+    @essential = o
+  end
+
+  def description= o
+    @description = o.to_s
+  end
+
+  def hash
+    @long.hash
+  end
+
+  def == other
+    self.hash == other.hash
+  end
 end
 
 #- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
