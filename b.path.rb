@@ -111,31 +111,31 @@ end
 # XDG Base Directory Support
 #
 
-B::Path::XDGConfig = [
-  ENV['XDG_CONFIG_HOME'],             # 1
-  "#{ENV['HOME']}/.config",           # 2
-  ENV['XDG_CONFIG_DIRS']&.split(':'), # 3
-  '/etc/xdg',                         # 4
-].flatten.map do
-  B::Path.new _1, confirm:%i(directory executable) rescue nil
-end.compact
-
-B::Path::XDGCache = [
-  ENV['XDG_CACHE_HOME'],   # 1
-  "#{ENV['HOME']}/.cache", # 2
-].flatten.map do
-  B::Path.new _1, confirm:%i(directory executable) rescue nil
-end.compact
-
 class B::Path
-  def self.xdgfind kind, fname
+  XDGConfig = [
+    ENV['XDG_CONFIG_HOME'],             # 1
+    "#{ENV['HOME']}/.config",           # 2
+    ENV['XDG_CONFIG_DIRS']&.split(':'), # 3
+    '/etc/xdg',                         # 4
+  ].flatten.map do
+    B::Path.new _1, confirm:%i(directory executable) rescue nil
+  end.compact
+
+  XDGCache = [
+    ENV['XDG_CACHE_HOME'],   # 1
+    "#{ENV['HOME']}/.cache", # 2
+  ].flatten.map do
+    B::Path.new _1, confirm:%i(directory executable) rescue nil
+  end.compact
+
+  def self.xdgfind fname, kind
     literal = Object.const_get "B::Path::XDG#{kind.capitalize}"
     list = literal.map{ _1 + fname }
     list.unshift B::Path.new fname, confirm:nil
     list.find{ _1.confirm :exist }
   end
 
-  def self.xdgvisit kind, fname
+  def self.xdgvisit fname, kind
     literal = Object.const_get "B::Path::XDG#{kind.capitalize}"
     p = literal.first + fname
     B::Path.dig p.dirname
