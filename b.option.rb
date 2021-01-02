@@ -135,8 +135,11 @@ class B::Option
 
   # underlay!() will ignore any unknown keys.
   def underlay! other
-    for k,v in dn_flatten(other).slice(*@property.map(&:long)) #### ??ruby version??
-      @buffer[plong k] ||= v
+    for k,v in dn_flatten(other).slice(*@property.map(&:long))
+      p = plong k
+      unless @buffer.key? p
+        @buffer[p] = v
+      end
     end
   end
 
@@ -144,7 +147,7 @@ class B::Option
   # the original string will be used as is.
   # (Verification only, no conversion.)
   def normalize p
-    bd = @buffer[p] || p.default
+    bd = @buffer.fetch p, p.default
     return nil if bd.nil?
     begin
       p.normalizer&.call(bd) || bd
@@ -232,7 +235,7 @@ class B::Option
     a = @property.map do |p|
       "--#{p.long} #{@value&.[](p).inspect} <- #{(@buffer[p] || p.default).inspect}"
     end
-    a.push "  bare #{@bare.inspect}"
+    a.push "  Bare #{@bare.map(&:inspect).join ', '}"
     if @value.nil?
       a.push "This instance isn't available until the make() is called."
     end
