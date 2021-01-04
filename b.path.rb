@@ -16,13 +16,6 @@ class B::Path < String
     return new.tail
   end
 
-  def self.directory p, base:'.', confirm:nil
-    new = allocate.replace File.expand_path p, base
-    cnd = [confirm].flatten.compact.map(&:to_s) | ['directory']
-    new.raise_unless cnd
-    return new.tail
-  end
-
   def initialize p, base:'.', confirm:'exist'
     replace File.expand_path p, base
     raise_unless confirm if confirm
