@@ -1,9 +1,32 @@
 
 module B
-  # B is the B of BAKA.
+  def self.callablize object
+    case
+    when object.respond_to?(:call)
+      object
+    when object.respond_to?(:to_proc)
+      object.to_proc
+    when object.respond_to?(:to_sym)
+      object.to_sym.to_proc
+    else
+      raise "Can't make it callable #{object}(#{object.class})"
+    end
+  end
 end
 
 class B::Structure
+  # Recursive
+  def self.to_h structure, k:'to_sym', v:'itself'
+    structure.to_h do |key,value|
+      key = B.callablize(k).call key
+      value = if value.is_a? B::Structure
+                to_h value, k:k, v:v
+              else
+                B.callablize(v).call value
+              end
+      [key, value]
+    end
+  end
 
   def clear padding=nil
     for sym in public_methods(false).grep(/(?<!=)=$/)
@@ -29,10 +52,6 @@ class B::Structure
     return self
   end
 
-  #
-  # be similar to Hash
-  #
-
   def merge *others
     others.inject self.clone do |a,b|
       a.insert b
@@ -41,7 +60,7 @@ class B::Structure
   alias :overlay :merge
 
   def keys m=:to_sym
-    instance_variables.map{ _1[1..].send m }
+    instance_variables.map{ B.callablize(m).call _1[1..] }
   end
 
   def slice *keep
@@ -61,25 +80,26 @@ class B::Structure
   end
   alias :mask :except
 
-  def to_a k:'to_sym', v:'itself', recur:false
-    instance_variables.map do |n|
-      value = instance_variable_get n
-      if recur and value.kind_of? B::Structure
-        value = value.to_a k:k, v:v, recur:recur
-      end
-      [ n[1..].public_send(k), value&.public_send(v) ]
+  def to_a k:'to_sym', v:'itself'
+    instance_variables.map do |key|
+      [
+        B.callablize(k).call(key[1..]),
+        B.callablize(v).call(instance_variable_get(key)),
+      ]
     end
   end
 
-  def each k:'to_sym', v:'itself', recur:false, &b
-    to_a(k:k,v:v,recur:recur).send(__callee__, &b)
+  def map k:'to_sym', v:'itself', &b
+    to_a(k:k, v:v).map(&b)
   end
-  alias :map :each
 
-  def to_h k:'to_sym', v:'itself', recur:true, &b
-    to_a(k:k,v:v,recur:recur).send(__method__, &b)
+  def to_h k:'to_sym', v:'itself', &b
+    to_a(k:k, v:v).to_h(&b)
   end
-  alias :to_hash :to_h
+
+  def to_hash(...)
+    to_h(...)
+  end
 
   def inspect indent:2
     stuff = self.map do |k,v|
@@ -88,6 +108,5 @@ class B::Structure
     end.join("\n").gsub(/^/, ' '*indent)
     "<#{self.class.name}>\n#{stuff}"
   end
-
 end
 
