@@ -1,83 +1,133 @@
 
-# Command#run returns a Result
-# Result has 2 Outputs
-# History has many Results
+# - Command#run returns a Result
+# - Result has a pair of Outputs (stdout & stderr)
+# - History has many Results
 
 require 'yaml'
 require_relative 'b.structure.rb'
 require_relative 'b.enum.rb'
 require_relative 'b.path.rb'
-require_relative 'b.len.rb'
 
+#
+#* Why the output file does not exist
+#
 
-# Why the output is absent.
-Reason = B::Enum.new(
-  :expire,
-  :dup,
-  :empty,
-)
+Absent = B::Enum.new :expire, :dup, :empty, :abduction
+
+def Absent.funnel other, nilable:
+  if other.nil?
+    if nilable
+      nil
+    else
+      raise 'nil cannot be passed through'
+    end
+  else
+    other.is_a?(self) ? other : self.new(other.to_sym)
+  end
+end
+
+#
+#* A output file
+#
 
 class Output < B::Structure
-  attr_accessor :path   # String
-  attr_accessor :size   # Integer
-  attr_reader   :absent # Reason / nil
+  attr_reader :path   # B::Path
+  attr_reader :size   # Integer
+  attr_reader :absent # Absent or nil
 
-  def absent= r
-    @absent = r.nil? || r.is_a?(Reason) ? r : Reason.new(r)
+  def absent?
+    not @absent.nil?
   end
 
   def present?
     @absent.nil?
   end
 
-  def initialize(...)
-    super(...)
-    if self.present? and @size.zero?
-      self.unlink :empty
+  def initialize path:, size:, absent:nil
+    @path   = B::Path.new path, confirm:nil
+    @size   = size
+    @absent = Absent.funnel absent, nilable:true
+    if present?
+      if @size.zero?
+        unlink :empty
+      elsif not @path.exist?
+        @absent = Absent.new :abduction
+      end
     end
   end
 
   def same_as o
-    if self.present? and o.present?
-      if @size.nonzero? and @size==o.size
+    if present? and o.present?
+      if @size!=0 and @size==o.size
         if @path.exist? and o.path.exist?
-          s =  @path.open('rb').read
-          o = o.path.open('rb').read
-          s == o
+          @path.open('rb').read == o.path.open('rb').read
         end
       end
     end
   end
 
-  def unlink reason
-    if self.present?
+  def unlink r
+    if present?
+      @absent = Absent.funnel r, nilable:false
       @path.unlink
-      @absent = reason
     end
   end
 
-  def to_hash k:'to_s', v:'itself'
-    {
-      path:   @path,
-      size:   @size,
-      absent: @absent&.value,
-    }.to_h{ [ _1.public_send(k), _2&.public_send(v) ] }
+  def self.funnel other
+    case other
+    when self
+      other
+    when Hash
+      self.new(**other.transform_keys(&:to_sym))
+    else
+      raise TypeError, "can't change #{other} to #{self}"
+    end
   end
 end
 
+#
+#* Command run result
+#
 
-#-
 class Result < B::Structure
-  attr_accessor :pid    # Integer
-  attr_accessor :status # Integer
-  attr_accessor :start  # Time
-  attr_accessor :end    # Time
-  attr_accessor :stdout # Output
-  attr_accessor :stderr # Output
+  attr_reader :pid    # Integer
+  attr_reader :status # Integer
+  attr_reader :start  # Time
+  attr_reader :end    # Time
+  attr_reader :stdout # Output
+  attr_reader :stderr # Output
 
-  def len
+  def pid= o
+    raise TypeError unless o.is_a? Integer
+    @pid = o
+  end
+
+  def status= o
+    raise TypeError unless o.is_a? Integer
+    @status = o
+  end
+
+  def start= o
+    raise TypeError unless o.is_a? Time
+    @start = o
+  end
+
+  def end= o
+    raise TypeError unless o.is_a? Time
+    @end = o
+  end
+
+  def stdout= o
+    @stdout = Output.funnel o
+  end
+
+  def stderr= o
+    @stderr = Output.funnel o
+  end
+
+  def time_spent
     if @end and @start
-      B::Len.atom(@end - @start)
+      @end - @start
     end
   end
 
@@ -89,56 +139,61 @@ class Result < B::Structure
   def same_as o
     @stdout.same_as o.stdout and @stderr.same_as o.stderr
   end
-
-  def absent?
-    stdout.absent and stderr.absent
-  end
-
-  def self.load_hash hash
-    hash = hash.clone
-    hash['stdout'] = Output.new(**hash['stdout'])
-    hash['stderr'] = Output.new(**hash['stderr'])
-    Result.new(**hash)
-  end
 end
 
+#
+#* Serializable Capped Array ( for Result )
+#
 
-#- Serializable Capped Array ( for Result )
 class History < Array
   def initialize limit:30, load:nil
     @limit = limit
-    self.load(load) if load
+    self.load_file(load) if load
   end
 
   def add newresult
-    if newresult.same_as self.last
+    if !empty? and newresult.same_as last
       newresult.unlink :dup
     end
     self.push newresult
-    while self.size > @limit
+    while size > @limit
       self.shift.unlink :expire
     end
     return self
   end
 
-  def save_file path
-    path.open('w+') do |fo|
-      data = self.map &:to_hash
-      fo.write YAML::dump data
+  # to built-in basic types
+  def to_b
+    map do |i|
+      B::Structure.to_h i, k:'to_s', v:->{
+        case _1
+        when B::Enum then _1.value
+        when B::Path then _1.to_s
+        else _1
+        end
+      }
     end
-    return self
+  end
+
+  def save_file path
+    open(path, 'w+'){ _1.write YAML::dump to_b }
+  end
+
+  def load_file path
+    replace self.class.load_file path
   end
 
   def self.load_file path
     YAML::load_file(path).map do |h|
       Result.new(**h)
     end
-    return self
   end
 end
 
+#
+#* chdir and run command
+#
 
-#-
 class Command < B::Structure
   attr_reader :cd      # B::Path
   attr_reader :command # B::Path
@@ -155,47 +210,61 @@ class Command < B::Structure
     ]
   end
 
+  def self.oname dir, prefix, time, suffix
+    B::Path.new(dir, confirm:nil).tail + [
+      prefix,
+      timestamp(time),
+      suffix,
+    ].flatten.reject(&:empty?).join('.')
+  end
+
+  def initialize(...)
+    super(...)
+    raise 'The command should not be empty.' if @command.nil?
+    # fill default values
+    self.cd     = nil if @cd.nil?
+    self.option = nil if @option.nil?
+  end
+
   def cd= o
-    @cd = B::Path.directory o
+    @cd = o ? B::Path.new(o, confirm:'directory') : '.'
   end
 
   def command= o
     @command = B::Path.new(
-      o,
-      base:    (@cd or '.'),
-      confirm: [:file, :executable],
+      o, base:@cd, confirm:['file', 'executable']
     )
   end
 
   def option= o
-    @option = o&.to_s&.strip
+    @option = o&.to_s&.strip || ''
   end
 
-  def run *prefix, capdir:, &block
-    c_d = capdir.tail
-    t_s = self.class.timestamp
-    n_o = c_d + (prefix.flatten + [t_s, 'out']).join('.')
-    n_e = c_d + (prefix.flatten + [t_s, 'err']).join('.')
-    h_o = n_o.open 'w+b'
-    h_e = n_e.open 'w+b'
+  def cmdopt
+    @option.empty? ? @command : "'#{@command}' #{@option}"
+  end
 
-    r = Result.new start:Time.now
+  def run capdir, prefix='', &block
+    now = Time.now
+    oh = self.class.oname(capdir, prefix, now, 'out').open 'w+b'
+    eh = self.class.oname(capdir, prefix, now, 'err').open 'w+b'
+
+    r = Result.new start:now
     r.pid = spawn(
-      "'#{@command}' #{@option}",
+      self.cmdopt,
       pgroup: true,
       chdir:  @cd,
-      out:    h_o.fileno,
-      err:    h_e.fileno,
+      out:    oh.fileno,
+      err:    eh.fileno,
     )
-    block&.call r # .pid and .start are available
+    block&.call r # At this point, r.pid and r.start are available.
     Process.waitpid r.pid
     r.end    = Time.now
     r.status = $?.exitstatus
-
-    r.stdout = Output.new path:h_o.path, size:h_o.size
-    r.stderr = Output.new path:h_e.path, size:h_e.size
-    h_o.close
-    h_e.close
+    r.stdout = Output.new path:oh.path, size:oh.size
+    r.stderr = Output.new path:eh.path, size:eh.size
+    oh.close
+    eh.close
     return r
   end
 end
