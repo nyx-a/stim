@@ -8,6 +8,7 @@ require_relative 'b.structure.rb'
 require_relative 'b.enum.rb'
 require_relative 'b.path.rb'
 
+
 #
 #* Why the output file does not exist
 #
@@ -145,33 +146,39 @@ end
 #* Serializable Capped Array ( for Result )
 #
 
-class History < Array
+class History
   def initialize limit:30, load:nil
+    @mutex = Mutex.new
     @limit = limit
-    self.load_file(load) if load
+    @array = [ ]
+    load_file(load) if load
   end
 
-  def add newresult
-    if !empty? and newresult.same_as last
-      newresult.unlink :dup
+  def push nr
+    if !@array.empty? and nr.same_as @array.last
+      nr.unlink :dup
     end
-    self.push newresult
-    while size > @limit
-      self.shift.unlink :expire
+    @mutex.synchronize do
+      @array.push nr
+      while @array.size > @limit
+        @array.shift.unlink :expire
+      end
     end
     return self
   end
 
   # to built-in basic types
   def to_b
-    map do |i|
-      B::Structure.to_h i, k:'to_s', v:->{
-        case _1
-        when B::Enum then _1.value
-        when B::Path then _1.to_s
-        else _1
-        end
-      }
+    @mutex.synchronize do
+      @array.map do |i|
+        B::Structure.to_h i, k:'to_s', v:->{
+          case _1
+          when B::Enum then _1.value
+          when B::Path then _1.to_s
+          else _1
+          end
+        }
+      end
     end
   end
 
@@ -180,13 +187,13 @@ class History < Array
   end
 
   def load_file path
-    replace self.class.load_file path
+    @mutex.synchronize do
+      @array.replace self.class.load_file path
+    end
   end
 
   def self.load_file path
-    YAML::load_file(path).map do |h|
-      Result.new(**h)
-    end
+    YAML::load_file(path).map{ Result.new(**_1) }
   end
 end
 
@@ -218,12 +225,10 @@ class Command < B::Structure
     ].flatten.reject(&:empty?).join('.')
   end
 
-  def initialize(...)
-    super(...)
-    raise 'The command should not be empty.' if @command.nil?
-    # fill default values
-    self.cd     = nil if @cd.nil?
-    self.option = nil if @option.nil?
+  def initialize c:, d:nil, o:nil
+    self.cd      = d # 1 this one has to come first
+    self.command = c # 2 second
+    self.option  = o # ? anyway
   end
 
   def cd= o
