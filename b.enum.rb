@@ -28,13 +28,6 @@ class B::Enum
     return self
   end
 
-  def == other
-    @value == other
-  end
-  def === other
-    @value === other
-  end
-
   def inspect
     body = self.class.const_get(:POSSIBLE).map do |x|
       i = x.inspect
@@ -42,5 +35,24 @@ class B::Enum
     end.join ' '
     "#{self.class.name}( #{body} )"
   end
+
+  def operator_N *args, &block
+    @value.public_send(__callee__, *args, &block)
+  end
+
+  def operator_1 arg, &block
+    arg = arg.value if arg.is_a? self.class # peel
+    @value.public_send(__callee__, arg, &block)
+  end
+
+  alias :to_i   :operator_N
+  alias :to_f   :operator_N
+  alias :to_s   :operator_N
+  alias :to_sym :operator_N
+  alias :==     :operator_1
+  alias :===    :operator_1
+
+  undef :operator_N
+  undef :operator_1
 end
 
