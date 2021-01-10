@@ -1,7 +1,7 @@
 
 module B
   class DHMS
-    # These constants are plural for a reason.
+    # These constant names are plural for a reason.
     DAYS    = 60 * 60 * 24
     HOURS   = 60 * 60
     MINUTES = 60
@@ -43,16 +43,17 @@ module B
 
   # Numeric -> String
   def sec2dhms num
-    r   = num
+    r   = num.abs
     d,r = r.divmod B::DHMS::DAYS
     h,r = r.divmod B::DHMS::HOURS
     m,r = r.divmod B::DHMS::MINUTES
     s   = r
     [
-      d==0 ? '' : "#{d}d",
-      h==0 ? '' : "#{h}h",
-      m==0 ? '' : "#{m}m",
-      s==0 ? '' : "#{s.round}s",
+      num.negative? ? '-' : '',
+      d==0 ? ''  : "#{d}d",
+      h==0 ? ''  : "#{h}h",
+      m==0 ? ''  : "#{m}m",
+      (s==0 and num!=0) ? ''  : "#{s.round}s",
     ].join
   end
 end
