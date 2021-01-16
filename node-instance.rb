@@ -3,9 +3,6 @@ require_relative 'node-class.rb'
 require_relative 'b.dhms.rb'
 require_relative 'tuple.rb'
 
-#
-#
-#
 
 class Node < B::Structure
 
@@ -37,31 +34,46 @@ class Node < B::Structure
     @mutex = self.class.get_mutex token
   end
 
+  def initialize(...)
+    super(...)
+    @history = History.new register:@@capture + @name + '.yaml'
+  end
+
   #
   #
   #
 
-  def save_history path
-    @history.save_file path
+  def issue instr
+    @@ts.write Stimulus[to:@name, instr:instr], TupleExpire
   end
 
-  def load_history path
-    @history.load_file path
+  def report result
+    @@ts.write Report[from:@name, result:result], TupleExpire
   end
+
+  # <- tuple
+  def wait time
+    # Rinda::TupleSpace#take waits forever if it receives nil.
+    @@ts.take Stimulus[to:@name], time
+  end
+
+  #
+  #
+  #
 
   def synchronize &b
     @mutex ? @mutex.synchronize(&b) : b.call
   end
 
   def pong
-    @@ts.write Report[from:@name, result: :pong], TupleExpire
+    report :pong
   end
 
   def run
     name = @name.to_s
     r = synchronize do
       @command.run @@capture, name do |r|
-        @@log.i "START #{@family} #{name} (#{r.pid})"
+        @@log.i "START #{name} (#{r.pid})"
       end
     end
     @@log.public_send(
@@ -69,7 +81,7 @@ class Node < B::Structure
       "END   #{name} (#{r.pid}) #{B.sec2dhms r.time_spent}"
     )
     @history.push r
-    @@ts.write Report[from:@name, result:r], TupleExpire
+    report r
     @interval&.reset
     return r
   end
@@ -94,24 +106,22 @@ class Node < B::Structure
     end
   end
 
-  def loop
+  def revolve
     loop do
-      left = @interval&.start
       begin
-        # Rinda::TupleSpace#take waits forever if it receives nil.
-        tuple = @@ts.take Stimulus[to:@name], left
+        tuple = Stimulus.new(**wait(@interval&.start))
       rescue Rinda::RequestExpiredError
         # Cyclic execution
-        tuple = Stimulus[ instr: :execute ]
+        tuple = Stimulus.new instr: :execute
       end
-      case tuple.instr
+      case tuple.instr.value
       when :execute then run
       when :pause   then pause
       when :resume  then resume
       when :ping    then pong
       when :eject   then break
       else
-        @log.e "Unknown instruction `#{tuple.instr}`"
+        @@log.e "Unknown instruction `#{tuple.instr}`"
       end
     end
   end
@@ -121,14 +131,15 @@ class Node < B::Structure
       @@log.e %Q`Thread is already running "#{@name}"`
       return @thread
     end
-    @thread = Thread.new{ loop }
+    @thread = Thread.new{ revolve }
     @thread.name = @name.to_s
     @@log.i %Q`Thread started "#{@name}"`
     nil
   end
 
-  def join_thread
+  def wait_close
     @thread&.join
+    @history.save
   end
 
 end

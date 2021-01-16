@@ -147,11 +147,12 @@ end
 #
 
 class History
-  def initialize limit:30, load:nil
-    @mutex = Mutex.new
-    @limit = limit
-    @array = [ ]
-    load_file(load) if load
+  def initialize limit:30, register:
+    @mutex    = Mutex.new
+    @limit    = limit
+    @array    = [ ]
+    @register = register
+    load
   end
 
   def push nr
@@ -182,17 +183,24 @@ class History
     end
   end
 
-  def save_file path
-    open(path, 'w+'){ _1.write YAML::dump to_b }
-  end
-
-  def load_file path
-    @mutex.synchronize do
-      @array.replace self.class.load_file path
+  def save
+    data = to_b
+    unless data.empty?
+      @mutex.synchronize do
+        open(@register, 'w+'){ _1.write YAML::dump data }
+      end
     end
   end
 
-  def self.load_file path
+  def load
+    if File.exist? @register and !File.zero? @register
+      @mutex.synchronize do
+        @array.replace self.class.load_yaml @register
+      end
+    end
+  end
+
+  def self.load_yaml path
     YAML::load_file(path).map{ Result.new(**_1) }
   end
 end
@@ -249,10 +257,10 @@ class Command < B::Structure
     @option.empty? ? @command : "'#{@command}' #{@option}"
   end
 
-  def run capdir, prefix='', &block
+  def run capture, prefix='', &block
     now = Time.now
-    oh = self.class.oname(capdir, prefix, now, 'out').open 'w+b'
-    eh = self.class.oname(capdir, prefix, now, 'err').open 'w+b'
+    oh = self.class.oname(capture, prefix, now, 'out').open 'w+b'
+    eh = self.class.oname(capture, prefix, now, 'err').open 'w+b'
 
     r = Result.new start:now
     r.pid = spawn(

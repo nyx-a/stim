@@ -1,125 +1,98 @@
 #! /usr/bin/env ruby
 
 require_relative 'b.log.rb'
-require_relative 'b.property.rb'
-require_relative 'controller.rb'
+require_relative 'b.option.rb'
+require_relative 'b.trap.rb'
+require_relative 'node-instance.rb'
 
-#- Option
 begin
-  opt = B::Property.new(
-    'daemonize' => B::Boolean,
-    'bind'      => String,
-    'port'      => Integer,
-    'home'      => B::Path,
-    'capture'   => String,
-    'pid-file'  => String,
-    'log-file'  => String,
-    'log-age'   => Integer,
-    'log-size'  => Integer,
-    'log-level' => Symbol,
-    'help'      => B::Boolean,
+  opt = B::Option.new(
+    'daemonize' => 'Run as a daemon',
+    'bind'      => 'DRb binding IP',
+    'port'      => 'DRb port',
+    'log.age'   => 'Log rotation age',
+    'log.size'  => 'Log file size',
   )
   opt.short(
     'daemonize' => :d,
     'bind'      => :b,
     'port'      => :p,
-    'home'      => :H,
-    'help'      => :h,
+  )
+  opt.boolean 'daemonize'
+  opt.normalizer(
+    'port'      => :to_integer,
+    'log.age'   => :to_integer,
+    'log.size'  => :to_integer,
   )
   opt.default(
-    'daemonize' => false,
     'bind'      => '127.0.0.1',
     'port'      => 57133,
-    'home'      => '~/.stim.d',
-    'capture'   => 'capture',
-    'pid-file'  => 'num.stim.pid',
-    'log-file'  => 'log.stim.log',
-    'log-age'   => 5,
-    'log-size'  => 1_000_000,
-    'log-level' => 'Information',
+    'log.age'   => 5,
+    'log.size'  => 1_000_000,
   )
-  opt.description(
-    'daemonize' => 'run as a daemon',
-    'bind'      => 'drb binding IP',
-    'port'      => 'drb port',
-    'home'      => 'home directory for stim',
-    'capture'   => 'capture directory',
-    'pid-file'  => 'pid file',
-    'log-file'  => 'log file',
-    'log-age'   => 'log rotation age',
-    'log-size'  => 'log file size',
-    'log-level' => 'log level',
-    'help'      => 'show this message',
-  )
-
-  opt.parse ARGV
-  if opt['help']
-    puts "Usage:"
-    puts "  $ #{$0} options and files"
-    puts "Options:"
-    puts opt.help indent:2
-    puts
-    exit
-  end
-  opt['home'].expand!.prepare_dir!
-  path_pid  = opt['home'] + opt['pid-file']
-  path_log  = opt['home'] + opt['log-file']
-  path_capd = opt['home'] + opt['capture']
-  path_capd.prepare_dir!
+  opt.make!
 rescue => err
   STDERR.puts err.message
   STDERR.puts
   exit 1
 end
 
+# XDG
+path_pid     = B::Path.xdgvisit('stim/pid.stim.pid', :cache)
+path_log     = B::Path.xdgvisit('stim/log.stim.log', :cache)
+path_capture = B::Path.xdgvisit('stim/capture/', :cache).dig
+path_cfgd    = B::Path.xdgvisit('stim/', :config).dig
+
 #- Daemon
 if opt['daemonize']
   if path_pid.exist?
-    STDERR.puts "file '#{path_pid.to_s}' already exists."
+    STDERR.puts "file '#{path_pid}' already exists."
     STDERR.puts
     exit 1
   end
   Process.daemon true
   path_pid.write $$
   at_exit do
-    path_pid.delete rescue nil
+    path_pid.unlink rescue nil
   end
 end
 
 #- Log
 log = B::Log.new(
-  file:   (opt['daemonize'] ? path_log.to_s : STDOUT),
+  file:   (opt['daemonize'] ? path_log : STDOUT),
   format: '%m-%d %T',
-  age:    opt['log-age'],
-  size:   opt['log-size'],
+  age:    opt['log.age'],
+  size:   opt['log.size'],
 )
 log.i "Process started. PID=#{$$}"
-log.loglevel = opt['log-level']
-log.i "Loglevel changed to #{opt['log-level']}"
+
 at_exit do
   sleep 1
   log.i "Process terminated. PID=#{$$}"
   log.gap
 end
 
+#- Trap
+B.trap do
+  Node.eject
+end
+
 #- Main
 begin
-  s = Controller.new(
-    path_capd,
-    30,
-    log,
-    opt['bind'],
-    opt['port'],
-    opt['home'],
+  Node.init(
+    bind:    opt['bind'],
+    port:    opt['port'],
+    cfgdir:  path_cfgd,
+    capture: path_capture,
+    log:     log
   )
-  for f in opt.bare
-    s.load f
+
+  for f in Node.configfiles + opt.bare
+    Node.load_toml f
   end
 
-  at_exit do
-    s.stop_all
-  end
-  s.sleep
+  Node.start
+  Node.join
 
 rescue Exception => err
   log.f [

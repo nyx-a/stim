@@ -4,9 +4,6 @@ require 'rinda/tuplespace'
 require_relative 'b.structure.rb'
 require_relative 'command.rb'
 
-#
-#
-#
 
 class Node < B::Structure
 
@@ -17,18 +14,18 @@ class Node < B::Structure
   @@ts    = Rinda::TupleSpace.new RefreshInterval
   @@mutex = { } # { ? => Mutex }
 
-  def self.get_mutex s
-    if s.nil?
+  def self.get_mutex token
+    if token.nil?
       nil
     else
-      s = s.to_s
-      @@mutex.fetch(s){ @@mutex[s] = Mutex.new }
+      token = token.to_s
+      @@mutex.fetch(token){ @@mutex[token] = Mutex.new }
     end
   end
 
-  def self.init bind:, port:, cfgdir:, capdir:, log:
-    @@cfgdir   = cfgdir
-    @@capdir   = capdir
+  def self.init bind:, port:, cfgdir:, capture:, log:
+    @@cfgdir   = cfgdir.undoubtedly :directory
+    @@capture  = capture.undoubtedly :directory
     @@log      = log
     @@table    = { } # { B::Path => [ Node ] }
     DRb.start_service "druby://#{bind}:#{port}", @@ts
@@ -36,16 +33,22 @@ class Node < B::Structure
   end
 
   def self.start
-    e = @@table.values.flat_map
-    e.each do
-      _1.start_thread
+    for e in @@table.values.flatten
+      e.start_thread
       sleep 1
     end
-    e.each &:join_thread
+  end
+
+  def self.eject
+    @@table.values.flatten.each{ _1.issue 'eject' }
+  end
+
+  def self.join
+    @@table.values.flatten.each &:wait_close
   end
 
   #
-  #* TOML
+  #* TOML configure files
   #
 
   def self.nest_projection hash, ancestor=[], stack={}
@@ -66,12 +69,22 @@ class Node < B::Structure
     result
   end
 
+  def self.unload_toml path
+    @@log.i "unload: #{path}"
+    @@table[path].each{ _1.issue 'eject' }
+    @@table[path].each{ _1.wait_close  }
+  end
+
   def self.load_toml path
-    basename = File.basename(path, '.*')
+    basename = File.basename path, '.*'
     tree     = TOML.load_file path
     flatten  = nest_projection tree, [basename]
-    flatten.map do |k,v|
-      ####raise unless v.except(*%w|d c o i m|).empty?
+    if @@table.key? path
+      unload_toml path
+    end
+    @@log.i "load: #{path}"
+    @@table[path] = flatten.map do |k,v|
+      raise unless v.except(*%w|d c o i m|).empty?
       dco = v.slice(*%w|d c o|).transform_keys(&:to_sym)
       Node.new(
         name:      k,
@@ -80,6 +93,16 @@ class Node < B::Structure
         mutex:     v['m'],
       )
     end
+  rescue => err
+    @@log.e [
+      err.message,
+      '(' + err.class.name + ')',
+      err.backtrace,
+    ].join("\n")
+  end
+
+  def self.configfiles
+    Dir.glob(@@cfgdir + '*.toml').map{ B::Path.new _1, confirm:nil }
   end
 
 end
