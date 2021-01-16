@@ -33,6 +33,7 @@ class Name
     @me.join Delimiter
   end
   alias :inspect :to_s
+  alias :to_str :to_s
 
   def hash
     to_s.hash
