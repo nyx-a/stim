@@ -166,7 +166,7 @@ class B::Option
         description: 'TOML file to underlay',
       )
     end
-    if find_l(:help).nil?
+    if find_l('help').nil?
       register Property.new(
         long:        'help',
         description: 'Show this help',
