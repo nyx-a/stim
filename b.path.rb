@@ -135,5 +135,10 @@ class B::Path
     B::Path.dig p.dirname
     p
   end
+
+  def self.xdgattempt fname, kind
+    literal = Object.const_get "B::Path::XDG#{kind.capitalize}"
+    literal.map{ _1 + fname }.find &:exist?
+  end
 end
 
