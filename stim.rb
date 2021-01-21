@@ -12,23 +12,27 @@ begin
     'port'      => 'DRb port',
     'log.age'   => 'Log rotation age',
     'log.size'  => 'Log file size',
+    'toml'      => 'toml config',
   )
   opt.short(
     'daemonize' => :d,
     'bind'      => :b,
     'port'      => :p,
+    'toml'      => :t,
   )
   opt.boolean 'daemonize'
   opt.normalizer(
     'port'      => :to_integer,
     'log.age'   => :to_integer,
     'log.size'  => :to_integer,
+    'toml'      => -> { B::Path.xdgfind _1, :config }
   )
   opt.default(
-    'bind'      => '127.0.0.1',
+    'bind'      => '0.0.0.0',
     'port'      => 57133,
     'log.age'   => 5,
     'log.size'  => 1_000_000,
+    'toml'      => 'stim.toml',
   )
   opt.make!
 rescue => err
@@ -38,9 +42,9 @@ rescue => err
 end
 
 # XDG
-path_pid     = B::Path.xdgvisit('stim/pid.stim.pid', :cache)
-path_log     = B::Path.xdgvisit('stim/log.stim.log', :cache)
-path_capture = B::Path.xdgvisit('stim/capture/', :cache).dig
+path_pid     = B::Path.xdgvisit('pid.stim.pid', :cache)
+path_log     = B::Path.xdgvisit('log.stim.log', :cache)
+path_capture = B::Path.xdgvisit('stim/', :cache).dig
 path_cfgd    = B::Path.xdgvisit('stim/', :config).dig
 
 #- Daemon

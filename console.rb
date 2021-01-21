@@ -10,17 +10,14 @@ begin
   opt = B::Option.new(
     'host' => 'DRb host',
     'port' => 'DRb port',
-    'toml' => 'TOML file name',
   )
   opt.short(
-    'host' => :b,
+    'host' => :h,
     'port' => :p,
-    'toml' => :t,
   )
   opt.default(
     'host' => '127.0.0.1',
     'port' => 57133,
-    'toml' => B::Path.xdgfind('stim.toml', :config),
   )
   opt.make!
 rescue => err
