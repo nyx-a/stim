@@ -7,29 +7,25 @@ require_relative 'output.rb'
 
 class Result < B::Structure
   attr_reader :pid    # Integer
-  attr_reader :status # Integer
+  attr_reader :status # Integer or nil
   attr_reader :start  # Time
   attr_reader :end    # Time
   attr_reader :stdout # Output
   attr_reader :stderr # Output
 
   def pid= o
-    raise TypeError unless o.is_a? Integer
     @pid = o
   end
 
   def status= o
-    raise TypeError unless o.is_a? Integer
     @status = o
   end
 
   def start= o
-    raise TypeError unless o.is_a? Time
     @start = o
   end
 
   def end= o
-    raise TypeError unless o.is_a? Time
     @end = o
   end
 

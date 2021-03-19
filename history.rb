@@ -53,8 +53,8 @@ class History
   end
 
   def load
-    if File.exist? @register and !File.zero? @register
-      @mutex.synchronize do
+    @mutex.synchronize do
+      if File.exist? @register and !File.zero? @register
         @array.replace self.class.load_yaml @register
       end
     end
