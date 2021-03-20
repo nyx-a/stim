@@ -6,7 +6,7 @@ end
 class B::Path < String
 
   def self.dig p, base:'.'
-    new = allocate.replace File.expand_path p, base
+    new = allocate.replace File.expand_path p.to_s, base
     new.split(File::SEPARATOR).inject do |stack,iter|
       stack = File.join stack, iter
       Dir.mkdir stack unless Dir.exist? stack
@@ -17,7 +17,7 @@ class B::Path < String
   end
 
   def initialize p, base:'.', confirm:'exist'
-    replace File.expand_path p, base
+    replace File.expand_path p.to_s, base
     raise_unless confirm if confirm
     self.tail! if [confirm].flatten.any? %r/directory/
   end
@@ -78,7 +78,6 @@ class B::Path < String
     end
     self
   end
-  alias :undoubtedly :raise_unless
   alias :expect :raise_unless
 
   #
@@ -101,44 +100,5 @@ class B::Path < String
     end
   end
 
-end
-
-#
-# XDG Base Directory Support
-#
-
-class B::Path
-  XDGConfig = [
-    ENV['XDG_CONFIG_HOME'],             # 1
-    "#{ENV['HOME']}/.config",           # 2
-    ENV['XDG_CONFIG_DIRS']&.split(':'), # 3
-    '/etc/xdg',                         # 4
-  ].flatten.compact
-  XDGConfig.map!{ B::Path.new(_1, confirm:nil).tail }
-
-  XDGCache = [ "#{ENV['HOME']}/.cache" ] # 2
-  if ENV.key? 'XDG_CACHE_HOME'
-    XDGCache.unshift ENV['XDG_CACHE_HOME'] # 1
-  end
-  XDGCache.map!{ B::Path.new(_1, confirm:nil).tail }
-
-  def self.xdgfind fname, kind
-    literal = Object.const_get "B::Path::XDG#{kind.capitalize}"
-    list = literal.map{ _1 + fname }
-    list.unshift B::Path.new(fname, confirm:nil).tail
-    list.find{ _1.confirm :exist }
-  end
-
-  def self.xdgvisit fname, kind
-    literal = Object.const_get "B::Path::XDG#{kind.capitalize}"
-    p = literal.first + fname
-    B::Path.dig p.dirname
-    p
-  end
-
-  def self.xdgattempt fname, kind
-    literal = Object.const_get "B::Path::XDG#{kind.capitalize}"
-    literal.map{ _1 + fname }.find &:exist?
-  end
 end
 

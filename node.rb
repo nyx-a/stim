@@ -1,24 +1,43 @@
 
 require_relative 'timekeeper.rb'
-require_relative 'node-class.rb'
 require_relative 'b.dhms.rb'
 require_relative 'tuple.rb'
+require_relative 'history.rb'
 
+class Node
 
-class Node < B::Structure
+  @@mtx = { } # { ? => Mutex }
+
+  def self.get_mutex token
+    if token.nil?
+      nil
+    else
+      token = token.to_s
+      @@mtx.fetch(token){ @@mtx[token] = Mutex.new }
+    end
+  end
+
+  def self.capture= o
+    @@capture = o
+  end
+
+  def self.ts= o
+    @@ts = o
+  end
+
+  def self.log= o
+    @@log = o
+  end
+
+  #- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   attr_reader :name     # Name
-  attr_reader :command  # Command
   attr_reader :interval # Numeric
   attr_reader :mutex    # Mutex
+  attr_reader :command  # Command
 
   def name= *o
     @name = Name.new(*o)
-  end
-
-  def command= o
-    raise TypeError, o.class unless o.is_a? Command
-    @command = o
   end
 
   def interval= o
@@ -35,21 +54,23 @@ class Node < B::Structure
     @mutex = self.class.get_mutex token
   end
 
-  def initialize(...)
-    super(...)
+  def initialize(
+    name:,
+    interval:  nil,
+    mutex:     nil,
+    directory: nil,
+    command:,
+    option:    nil
+  )
+    @command = Command.new(
+      directory: directory,
+      command:   command,
+      option:    option,
+    )
+    self.interval = interval
+    self.mutex    = mutex
+    self.name     = name
     @history = History.new register:@@capture + @name + '.yaml'
-  end
-
-  #
-  #
-  #
-
-  def issue instr
-    @@ts.write Stimulus[to:@name, instr:instr], TupleExpire
-  end
-
-  def report result
-    @@ts.write Report[from:@name, result:result], TupleExpire
   end
 
   # <- tuple
@@ -66,8 +87,8 @@ class Node < B::Structure
     @mutex ? @mutex.synchronize(&b) : b.call
   end
 
-  def pong
-    report :pong
+  def execute
+    @thread = Thread.start { run }
   end
 
   def run
@@ -77,7 +98,7 @@ class Node < B::Structure
         @@log.i "START #{name} (#{r.pid})"
       end
     end
-    @@log.public_send(
+    @@log.send(
       (r.status==0 ? :i : :e),
       "END   #{name} (#{r.pid}) #{B.sec2dhms r.time_spent}"
     )
@@ -107,39 +128,8 @@ class Node < B::Structure
     end
   end
 
-  def revolve
-    loop do
-      begin
-        tuple = Stimulus.new(**wait(@interval&.start))
-      rescue Rinda::RequestExpiredError
-        # Cyclic execution
-        tuple = Stimulus.new instr: :execute
-      end
-      case tuple.instr.value
-      when :execute then run
-      when :pause   then pause
-      when :resume  then resume
-      when :ping    then pong
-      when :eject   then break
-      else
-        @@log.e "Unknown instruction `#{tuple.instr}`"
-      end
-    end
-  end
-
-  def start_thread
-    if @thread&.status
-      @@log.e %Q`Thread is already running "#{@name}"`
-      return @thread
-    end
-    @thread = Thread.new{ revolve }
-    @thread.name = @name.to_s
-    @@log.i %Q`Thread started "#{@name}"`
-    nil
-  end
-
-  def wait_close
-    @thread&.join
+  def eject
+    @thread.join
     @history.save
   end
 

@@ -45,12 +45,13 @@ class B::Enum
     @value.public_send(__callee__, arg, &block)
   end
 
-  alias :to_i   :operator_N
-  alias :to_f   :operator_N
-  alias :to_s   :operator_N
-  alias :to_sym :operator_N
-  alias :==     :operator_1
-  alias :===    :operator_1
+  alias :to_i    :operator_N
+  alias :to_f    :operator_N
+  alias :to_s    :operator_N
+  alias :to_sym  :operator_N
+  alias :to_proc :operator_N
+  alias :==      :operator_1
+  alias :===     :operator_1
 
   undef :operator_N
   undef :operator_1

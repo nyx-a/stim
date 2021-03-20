@@ -46,7 +46,7 @@ while buffer = Readline.readline("> ", true)
   when /report/
     pp ts.read_all Report.wildcard
   when /run/
-    ts.write Stimulus[to:array[1], instr:'execute']
+    ts.write Stimulus.new(to:array[1], instr:'execute').to_h
   end
 end
 

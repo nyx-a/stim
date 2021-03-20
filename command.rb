@@ -6,9 +6,9 @@ require_relative 'result.rb'
 #
 
 class Command < B::Structure
-  attr_reader :cd      # B::Path
-  attr_reader :command # B::Path
-  attr_reader :option  # String
+  attr_reader :directory # B::Path
+  attr_reader :command   # B::Path
+  attr_reader :option    # String
 
   def self.timestamp t=Time.now
     "%02d%02d%s%02d%02d%02d" % [
@@ -29,19 +29,19 @@ class Command < B::Structure
     ].flatten.reject(&:empty?).join('.')
   end
 
-  def initialize c:, d:nil, o:nil
-    self.cd      = d # 1 this one has to come first
-    self.command = c # 2 second
-    self.option  = o # ? anyway
+  def initialize command:, directory:nil, option:nil
+    self.directory = directory # it needs to be assigned first
+    self.command   = command   # second
+    self.option    = option
   end
 
-  def cd= o
-    @cd = o ? B::Path.new(o, confirm:'directory') : '.'
+  def directory= o
+    @directory = o ? B::Path.new(o, confirm:'directory') : '.'
   end
 
   def command= o
     @command = B::Path.new(
-      o, base:@cd, confirm:['file', 'executable']
+      o, base:@directory, confirm:['file', 'executable']
     )
   end
 
@@ -62,7 +62,7 @@ class Command < B::Structure
     r.pid = spawn(
       self.cmdopt,
       pgroup: true,
-      chdir:  @cd,
+      chdir:  @directory,
       out:    oh.fileno,
       err:    eh.fileno,
     )

@@ -61,11 +61,11 @@ class B::Option
   end
 
   def boolean *arr # [ long ]
-    arr.each{ plong(_1).boolean = true }
+    arr.flatten.each{ plong(_1).boolean = true }
   end
 
   def essential *arr # [ long ]
-    arr.each{ plong(_1).essential = true }
+    arr.flatten.each{ plong(_1).essential = true }
   end
 
   def normalizer **hsh # { long => normalizer }
@@ -107,8 +107,14 @@ class B::Option
         letters = $~.post_match.chars
         b,o = letters.map{ pshort _1 }.partition &:boolean
         b.each{ @buffer[_1] = true }
-        @buffer[o.pop] = second if second && !o.empty?
         o.each{ @buffer[_1] = nil }
+        if second
+          if o.empty?
+            @bare.push second
+          else
+            @buffer[o.pop] = second
+          end
+        end
       else
         # bare
         @bare.push first
@@ -135,6 +141,7 @@ class B::Option
 
   # underlay!() will ignore any unknown keys.
   def underlay! other
+    return unless other.is_a? Hash
     for k,v in dn_flatten(other).slice(*@property.map(&:long))
       p = plong k
       unless @buffer.key? p
@@ -150,7 +157,8 @@ class B::Option
     bd = @buffer.fetch p, p.default
     return nil if bd.nil?
     begin
-      p.normalizer&.call(bd) || bd
+      nz = p.normalizer&.call(bd)
+      nz != nil ? nz : bd
     rescue Exception => e
       raise %Q`verification failed --#{p.long} "#{bd}" #{e.message}`
     end
@@ -163,6 +171,8 @@ class B::Option
     if find_l('toml').nil?
       register Property.new(
         long:        'toml',
+        default:     "~/.config/#{File.basename($0, '.*')}.toml",
+        normalizer: -> f { File.exist?(f) ? f : false },
         description: 'TOML file to underlay',
       )
     end
@@ -202,14 +212,21 @@ class B::Option
     ARGV.clear
   end
 
+  def to_hash
+    if @value.nil?
+      raise "#{self.class} is not available until the make() is called"
+    end
+    @property.map{ [_1.long, @value[_1]] }.to_h
+  end
+
   def slice *longkeys
     filter = longkeys.flatten.map{ plong _1 }
-    @property.intersection(filter).map{ [_1.long, @value[_1]] }.to_h
+    @property.intersection(filter).map{ [_1.long.to_sym, @value[_1]] }.to_h
   end
 
   def except *longkeys
     mask = longkeys.flatten.map{ plong _1 }
-    @property.difference(mask).map{ [_1.long, @value[_1]] }.to_h
+    @property.difference(mask).map{ [_1.long.to_sym, @value[_1]] }.to_h
   end
 
   def bare
@@ -219,7 +236,6 @@ class B::Option
   def help
     matrix = @property.map do |p|
       [
-        (p.essential ? '!' : ''),
         (p.short ? "-#{p.short}" : ''),
         "--#{p.long}",
         "#{p.description}#{(p.boolean ? ' (boolean)' : '')}",
@@ -227,7 +243,7 @@ class B::Option
     end
     longest = matrix.transpose.map{ _1.map(&:to_s).map(&:size).max }
     matrix.map do |row|
-      "%-*s %-*s %-*s %-*s" % longest.zip(row).flatten
+      "%-*s %-*s %-*s" % longest.zip(row).flatten
     end.join "\n"
   end
 

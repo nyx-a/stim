@@ -7,40 +7,60 @@ end
 
 class B::Log
   def initialize(
-    file:,
+    file,
     age:       3,
     size:      1_000_000,
     format:    '%F %T.%1N',
-    separator: ' | '
+    separator: ' | ',
+    levels:    %w(debug information warning error fatal)
   )
-    @logger     = Logger.new file, age, size
-    @format     = format
-    @separator  = separator
-    @padding    = ' ' * Time.now.strftime(@format).length
-    @inactive   = { }
+    @logger    = Logger.new file, age, size
+    @format    = format
+    @separator = separator
+    @padding   = ' ' * Time.now.strftime(@format).length
+    setlevels! levels
   end
 
-  def output message
-    unless @inactive[__callee__]
-      @logger << make(__callee__, Time.now, message)
+  def levels
+    @levels
+  end
+
+  def setlevels! *ary
+    if @levels
+      self.class.undef_method(*@levels.map(&:chr))
+    end
+    @levels = ary.flatten.map(&:to_s).map(&:downcase)
+    @levels.each &:freeze
+    @levels.freeze
+    @active = { }
+    for letter in @levels.map(&:chr).map(&:to_sym)
+      self.class.alias_method letter, :x
+      @active[letter] = true
     end
   end
-  LEVELS = 'diwef'.freeze
-  LEVELS.each_char { |c| alias_method c, :output }
-  undef :output
 
-  def loglevel= letter
-    i = LEVELS.index letter.to_s.downcase.chr
-    if i.nil?
-      return nil
+  def loglevel= lvl
+    lvl = lvl.to_s.downcase
+    idx = @levels.index lvl
+    if idx != nil
+      @levels[...idx].each{ @active[_1.chr.to_sym] = false }
+      @levels[ idx..].each{ @active[_1.chr.to_sym] = true  }
+      return lvl
     end
-    for x in LEVELS[...i].each_char
-      @inactive[x.to_sym] = true
+  end
+
+  # @active[:x] cannot be true
+  def x *object, method:'inspect'
+    if @active[__callee__]
+      @logger << make(
+        __callee__,
+        Time.now,
+        object.map{
+          String===_1 ? _1 : _1.public_send(method)
+        }.join(' ')
+      )
     end
-    for x in LEVELS[i..].each_char
-      @inactive[x.to_sym] = false
-    end
-    LEVELS[i]
+    object.one? ? object.first : object
   end
 
   def blank
@@ -57,10 +77,10 @@ class B::Log
 
   private
 
-  def make severity, time, message
+  def make letter, time, message
     tm = time.strftime @format
-    h1 = [severity.upcase,   tm      ].join(' ')
-    h2 = [severity.downcase, @padding].join(' ')
+    h1 = [letter.upcase,   tm      ].join ' '
+    h2 = [letter.downcase, @padding].join ' '
     [
       h1,
       @separator,
