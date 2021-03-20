@@ -2,9 +2,9 @@
 
 require 'readline'
 require 'rinda/tuplespace'
-require_relative 'b.option.rb'
-require_relative 'b.path.rb'
-require_relative 'tuple.rb'
+require_relative 'src/b.option.rb'
+require_relative 'src/b.path.rb'
+require_relative 'src/tuple.rb'
 
 begin
   opt = B::Option.new(

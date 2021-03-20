@@ -1,9 +1,9 @@
 #! /usr/bin/env ruby
 
-require_relative 'b.log.rb'
-require_relative 'b.option.rb'
-require_relative 'b.trap.rb'
-require_relative 'manager.rb'
+require_relative 'src/b.log.rb'
+require_relative 'src/b.option.rb'
+require_relative 'src/b.trap.rb'
+require_relative 'src/manager.rb'
 
 begin
   opt = B::Option.new(
