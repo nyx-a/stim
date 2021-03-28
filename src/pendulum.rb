@@ -86,7 +86,8 @@ class Pendulum
 
   def start sec=nil
     if alive?
-      raise "Multiple activation is not allowed."
+      return false
+      # raise "Multiple activation is not allowed."
     end
     if sec.nil?
       sec = remaining_time
@@ -116,13 +117,13 @@ class Pendulum
         sec = @interval
       end
     end
-    return nil
+    return true
   end
 
   def stop
     if alive?
       @broke = Time.now
-      @thread.run.join
+      @thread.run
       return true
     end
   end
@@ -132,9 +133,26 @@ class Pendulum
 
   #- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+  def reset
+    case
+    when pausing?
+      @target = @broke = nil
+    when sleeping?
+      stop
+      @target = @broke = nil
+      start
+    end
+  end
+
   def join
     @thread.join
     return nil
+  end
+
+  def state
+    %w(dead alive default pausing sleeping calling aborting)
+      .select{ send "#{_1}?" }
+      .join('+')
   end
 
   def inspect

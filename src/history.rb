@@ -7,7 +7,7 @@ require_relative 'result.rb'
 #
 
 class History
-  def initialize limit:30, register:
+  def initialize register, limit:30
     @mutex    = Mutex.new
     @limit    = limit
     @array    = [ ]

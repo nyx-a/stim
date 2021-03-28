@@ -5,11 +5,13 @@ require_relative 'src/b.option.rb'
 require_relative 'src/b.trap.rb'
 require_relative 'src/manager.rb'
 
+Thread.abort_on_exception = true
+
 begin
   opt = B::Option.new(
     'daemonize' => 'Run as a daemon',
-    'bind'      => 'DRb binding IP',
-    'port'      => 'DRb port',
+    'bind'      => 'binding IP',
+    'port'      => 'control port',
     'log.age'   => 'Log rotation age',
     'log.size'  => 'Log file size',
   )
@@ -38,9 +40,9 @@ rescue => err
 end
 
 #- Pathes
-dir_cache   =  B::Path.dig '~/.cache'
-file_log    = (B::Path.dig('~/.log') + 'log.stim.log')
-file_pid    = (dir_cache + 'pid.stim.pid')
+dir_cache   = B::Path.dig('~/.cache')
+file_log    = B::Path.dig('~/.log') + 'log.stim.log'
+file_pid    =  dir_cache + 'pid.stim.pid'
 dir_capture = (dir_cache + 'stim').dig
 
 #- Daemon
@@ -64,10 +66,9 @@ log = B::Log.new(
   age:    opt['log.age'],
   size:   opt['log.size'],
 )
-log.i "Process started. PID=#{$$}"
+log.i "Process started. PID=#{$$} Port=#{opt['bind']}:#{opt['port']}"
 
 at_exit do
-  sleep 1
   log.i "Process terminated. PID=#{$$}"
   log.gap
 end
@@ -80,10 +81,14 @@ begin
     capture: dir_capture,
     log:     log
   )
-  # B.trap{ manager.eject }
-  manager.add_recipe opt.bare
-  loop{ manager.wait_for_event }
 
+  B.trap do
+    manager.terminate
+  end
+
+  manager.add_recipe opt.bare
+  manager.server_start
+  manager.stand_by
 rescue Exception => err
   log.f [
     err.message,

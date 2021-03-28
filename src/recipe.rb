@@ -2,11 +2,11 @@
 require 'toml'
 require_relative 'b.path.rb'
 require_relative 'name.rb'
-require_relative 'node.rb'
+require_relative 'job.rb'
 
 class Recipe
 
-  # Key in TOML => Arguments of the Node#initialize
+  # Key in TOML => Arguments of the Job#initialize
   Correspondence = {
     'd' => :directory,
     'c' => :command,
@@ -15,12 +15,12 @@ class Recipe
     'm' => :mutex,
   }.freeze
 
-  def self.new_node_from_hash name, h
+  def self.new_job_from_hash name, h
     excess = h.except(*Correspondence.keys)
     unless excess.empty?
       raise KeyError, "extra elements -> #{excess.inspect}"
     end
-    Node.new(name:name, **h.transform_keys(Correspondence))
+    Job.new(name:name, **h.transform_keys(Correspondence))
   end
 
   # toh is Tree of Hash
@@ -43,35 +43,56 @@ class Recipe
     return result
   end
 
+  def self.pluck_off_leaves toh
+    result_a = [ ]
+    result_h = { }
+    for k in toh.keys.select{ toh[_1].is_a? Hash }
+      r = pluck_off_leaves toh[k]
+      if r.empty?
+        result_a.push k
+      else
+        result_h[k] = r
+      end
+    end
+    unless result_h.empty?
+      result_a.push result_h
+    end
+    return result_a
+  end
+
   #- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  attr_reader :basename # Name
-  attr_reader :path     # B::Path
-  attr_reader :time     # Time
-  attr_reader :node     # Array[ Node ]
+  attr_reader :name # Name
+  attr_reader :path # B::Path
+  attr_reader :time # Time
+  attr_reader :job  # Array[ Job ]
+  attr_reader :node # Array, Hash, or nil
 
   def initialize path
-    @path     = B::Path.new path
-    @basename = Name.new @path.basename '.*'
-    @node     = [ ]
+    @path = B::Path.new path
+    @name = Name.new @path.basename '.*'
+    @job  = [ ]
+    @node = nil
   end
 
   def unload!
-    @node.each &:eject
-    @node.clear
+    @job.each &:terminate
+    @job.clear
+    @node = nil
     return self
   end
 
   def load!
-    tree = TOML.load_file @path
-    leaf = self.class.nourished_leaves tree, [@basename]
     unload!
-    @node.replace leaf.map(&self.class.method(:new_node_from_hash))
+    tree  = TOML.load_file @path
+    leaf  = self.class.nourished_leaves tree, [@name]
+    @node = self.class.pluck_off_leaves tree
+    @job.replace leaf.map(&self.class.method(:new_job_from_hash))
     @time = @path.mtime
     return self
   end
 
-  def deleted?
+  def missing?
     not @path.exist?
   end
 
@@ -81,10 +102,10 @@ class Recipe
 
   def inspect
     [
-      "basename: #{@basename.inspect}",
-      "path:     #{@path.inspect}",
-      "time:     #{@time.inspect}",
-      "node:     #{@node.map &:name}",
+      "name: #{@name.inspect}",
+      "path: #{@path.inspect}",
+      "time: #{@time.inspect}",
+      "job:  #{@job.map &:name}",
     ].join("\n")
   end
 end

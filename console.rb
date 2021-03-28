@@ -1,15 +1,25 @@
 #! /usr/bin/env ruby
 
-require 'readline'
-require 'rinda/tuplespace'
+require 'reline'
+require 'colorize'
 require_relative 'src/b.option.rb'
 require_relative 'src/b.path.rb'
-require_relative 'src/tuple.rb'
+require_relative 'src/socket-helper.rb'
+require_relative 'src/name.rb'
+
+def rainbow s
+  c = String.colors - %i(black light_black default white light_white)
+  s.chars.map{
+    _1.colorize c.sample # , mode: :swap
+  }.join
+end
+
+#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 begin
   opt = B::Option.new(
-    'host' => 'DRb host',
-    'port' => 'DRb port',
+    'host' => 'host',
+    'port' => 'port',
   )
   opt.short(
     'host' => :h,
@@ -26,27 +36,34 @@ rescue => err
   exit 1
 end
 
-uri = "druby://#{opt[:host]}:#{opt[:port]}"
+#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+prompt = ':)'.colorize(mode: :swap) + ' '
+
+socket = TCPSocket.open opt[:host], opt[:port]
+socket.extend SocketHelper
+info = socket.recv_object
+
+Reline.completion_proc = -> s do
+  r = Regexp.new Regexp.quote s
+  b = Reline.line_editor.whole_buffer
+  if b !~ /\s/
+    info[:verb].grep(r).map{ _1 + ' ' }
+  else
+    info[:noun].grep r
+  end
+end
+
+puts rainbow 'Welcome to stim console'
+puts "Host #{socket.opponent}"
+puts "You  #{socket.me}"
 puts
-puts '    ' + uri.inspect
-puts
 
-DRb.start_service
-ts = Rinda::TupleSpaceProxy.new DRbObject.new_with_uri uri
-
-while buffer = Readline.readline("> ", true)
-
-  array = buffer.split
-
-  case array.first
-  when /terminate/
-    ###
-  when /stimulus/
-    pp ts.read_all Stimulus.wildcard
-  when /report/
-    pp ts.read_all Report.wildcard
-  when /run/
-    ts.write Stimulus.new(to:array[1], instr:'execute').to_h
+while buffer = Reline.readline(prompt, true)
+  unless buffer.empty?
+    socket.w buffer
+    puts socket.r
+    puts
   end
 end
 
