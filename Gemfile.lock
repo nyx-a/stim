@@ -4,7 +4,7 @@ GEM
     colorize (0.8.1)
     io-console (0.5.9)
     parslet (1.8.2)
-    reline (0.2.4)
+    reline (0.2.5)
       io-console (~> 0.5)
     toml (0.2.0)
       parslet (~> 1.8.0)
@@ -18,4 +18,4 @@ DEPENDENCIES
   toml
 
 BUNDLED WITH
-   2.2.3
+   2.2.16

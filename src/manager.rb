@@ -72,7 +72,7 @@ class Manager
       loop do
         socket = tcpserver.accept
         socket.extend SocketHelper
-        @log.d "#{socket.opponent} is accepted"
+        @log.i "#{socket.opponent} is accepted"
 
         socket.send_object(
           verb: Description.keys,
@@ -80,7 +80,7 @@ class Manager
         )
         repl socket
 
-        @log.d "#{socket.opponent} is gone"
+        @log.i "#{socket.opponent} is gone"
         socket.close
       end
     end

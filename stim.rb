@@ -40,10 +40,9 @@ rescue => err
 end
 
 #- Pathes
-dir_cache   = B::Path.dig('~/.cache')
-file_log    = B::Path.dig('~/.log') + 'log.stim.log'
-file_pid    =  dir_cache + 'pid.stim.pid'
-dir_capture = (dir_cache + 'stim').dig
+dir_capture = B::Path.dig('~/.log')
+file_log    = B::Path.dig('~/.log') + 'stim.log'
+file_pid    = B::Path.dig('~/.log') + 'stim.pid'
 
 #- Daemon
 if opt['daemonize']

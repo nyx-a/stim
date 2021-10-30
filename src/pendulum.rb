@@ -71,8 +71,8 @@ class Pendulum
   def remaining_time
     case
     when default?  then @interval
-    when pausing?  then @target - @broke
-    when sleeping? then @target - Time.now
+    when pausing?  then @target &.- @broke
+    when sleeping? then @target &.- Time.now
     end
   end
 
@@ -91,6 +91,9 @@ class Pendulum
     end
     if sec.nil?
       sec = remaining_time
+      if sec.nil?
+        sec = @interval
+      end
     end
     if sec.negative?
       raise ArgumentError,
