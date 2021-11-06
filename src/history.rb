@@ -61,7 +61,9 @@ class History
   end
 
   def self.load_yaml path
-    YAML::load_file(path).map{ Result.new(**_1) }
+    str = File.read path
+    obj = Psych.safe_load str, permitted_classes:[Time, Symbol]
+    obj.map{ Result.new(**_1) }
   end
 end
 
